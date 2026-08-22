@@ -15,7 +15,8 @@ def test_party_mp_resets_each_month():
     hp = c.hero_party(c.player.key)
     assert hp.mp == C.CAMPAIGN_MOVEMENT_POINTS
     c.end_turn()
-    assert hp.mp == C.CAMPAIGN_MOVEMENT_POINTS or not c.ended
+    if not c.ended:
+        assert hp.mp == C.CAMPAIGN_MOVEMENT_POINTS
 
 
 def test_terrain_costs_apply_to_movement():
@@ -88,9 +89,7 @@ def test_contact_opens_battle_with_capped_sides():
             continue
         foe = p
         break
-    if foe is None:
-        assert True
-        return
+    assert foe is not None
     hp.move_to(tuple(foe.hex))
     c._scan_contacts_for(hp)
     assert len(c.pending_battles) >= 1
@@ -107,9 +106,7 @@ def test_assault_on_enemy_settlement():
         if h.owner is not None and h.owner != c.player.key:
             target = h
             break
-    if target is None:
-        assert True
-        return
+    assert target is not None
     hp = c.hero_party(c.player.key)
     hp.move_to(tuple(target.hex))
     before = c.player.settlement_ids[:]
@@ -117,11 +114,11 @@ def test_assault_on_enemy_settlement():
     pending = list(c.pending_battles)
     if not pending:
         # an empty garrison can be taken without a battle
-        assert target.owner != c.player.key or 1 == 1
-        return
-    b = pending[0]
-    assert b.assault is True
-    assert b.target_sid == target.id
+        assert target.owner == c.player.key
+    else:
+        b = pending[0]
+        assert b.assault is True
+        assert b.target_sid == target.id
 
 
 def pathfind_short(world, a, b):

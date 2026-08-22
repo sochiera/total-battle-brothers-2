@@ -20,9 +20,7 @@ def test_heir_takes_over_on_hero_death():
     if r.heir is None:
         # designate one first
         cand = [u for u in r.unit_ids if u != r.hero]
-        if not cand:
-            assert True
-            return
+        assert cand
         assert c.designate_heir(cand[0]).ok
     heir = r.heir
     assert heir is not None
@@ -102,9 +100,7 @@ def test_mid_loss_of_hero_with_heir_loses_morale_but_continues():
     r = c.player
     if r.heir is None:
         cand = [u for u in r.unit_ids if u != r.hero]
-        if not cand:
-            assert True
-            return
+        assert cand
         c.designate_heir(cand[0])
     morale_before = r.morale
     _kill_hero(c, r)

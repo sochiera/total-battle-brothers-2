@@ -50,7 +50,8 @@ class CampaignScreen:
         out = []
         pending = bool(self.campaign and self.campaign.pending_battles)
         items = [
-            ("Press B: battle waits", self.resolve_battle, pending),
+            ("Battle waits - B", self.resolve_battle, pending),
+            ("Auto-resolve (A)", self.auto_resolve, pending),
             ("End Month (M)", self.end_month, True),
             ("Open Settlement (O)", self.open_selected, True),
             ("Found a Village (F)", self.toggle_found, True),
@@ -128,6 +129,10 @@ class CampaignScreen:
             k = ev.key
             if k == pygame.K_b:
                 self.resolve_battle()
+            elif k == pygame.K_a:
+                self.auto_resolve()
+            elif k == pygame.K_f:
+                self.toggle_found()
             elif k == pygame.K_m:
                 self.end_month()
             elif k == pygame.K_o:
@@ -142,14 +147,22 @@ class CampaignScreen:
                     self.app.found_mode = False
                 else:
                     self.app.mode = "title"
-            elif k in (pygame.K_LEFT, pygame.K_a):
+            elif k == pygame.K_LEFT:
                 self.ox += 40
-            elif k in (pygame.K_RIGHT, pygame.K_d):
+            elif k == pygame.K_RIGHT:
                 self.ox -= 40
-            elif k in (pygame.K_UP, pygame.K_w):
+            elif k == pygame.K_UP:
                 self.oy += 40
             elif k == pygame.K_DOWN:
-                self.oy += 40
+                self.oy -= 40
+
+    def auto_resolve(self):
+        if not self.campaign.pending_battles:
+            self.hint = "No battle is waiting"
+            return
+        self.campaign.auto_resolve_pending()
+        self.hint = "Pending battle auto-resolved"
+        self.app.audio.sfx("close")
 
     def _button_build(self):
         self._buttons = self._make_buttons()
@@ -186,8 +199,10 @@ class CampaignScreen:
             return
         # pick what stands there
         sid = self.campaign.settlement_id_at(hexpos)
-        party = next((p for p in self.campaign.parties
-                      if tuple(p.hex) == hexpos), None)
+        parties_here = [p for p in self.campaign.parties
+                        if tuple(p.hex) == hexpos]
+        party = next((p for p in parties_here if p.kind == "bandit"),
+                     parties_here[0] if parties_here else None)
         if party is not None and party.realm == self.campaign.player.key \
                 and party.kind == "hero":
             self.selected_pid = party.pid
@@ -195,6 +210,12 @@ class CampaignScreen:
             self.hint = ("Company of %d men, %d moves left - click an "
                          "adjacent hex to march"
                          % (party.size(), party.mp))
+        elif party is not None and party.kind == "bandit":
+            leader = c.units.get(party.unit_ids[0]) if party.unit_ids else None
+            name = leader.name if leader else "unknown raider"
+            self.selected_pid = None
+            self.hint = ("Robber band %d, led by %s: %d men - raid threat"
+                         % (party.pid, name, party.size()))
         elif sid is not None:
             self.selected_pid = None
             self.selected_sid = sid
@@ -207,6 +228,14 @@ class CampaignScreen:
         else:
             self.selected_pid = None
             self.hint = "empty %s" % self.campaign.world.terrain(hexpos)
+
+    def bandit_parties(self):
+        return [p for p in self.campaign.parties if p.kind == "bandit"
+                and any(self.campaign.units[u].alive for u in p.unit_ids)]
+
+    def visible_bandit_pids(self):
+        """IDs presented on the map, useful to the UI and smoke tests."""
+        return [p.pid for p in self.bandit_parties()]
 
     def _world_visible(self, hexpos):
         return True
@@ -232,16 +261,13 @@ class CampaignScreen:
         for p in c.parties:
             cx, cy = hex_center(*p.hex, self.ox, self.oy)
             if p.kind == "bandit":
-                # the robber bands are the sharpest trouble on the roads
-                if p.unit_ids:
-                    u = c.units[p.unit_ids[0]]
-                    sp = self.app.art["unit"].get((6, u.kit, u.is_hero))
-                    if sp:
-                        surf.blit(sp, (cx - 8, cy - 10))
-                pygame.draw.circle(surf, (160, 30, 20), (cx, cy - 12), 3)
-                pygame.draw.circle(surf, (120, 20, 14), (cx, cy - 12), 5, 1)
+                if not any(c.units[u].alive for u in p.unit_ids):
+                    continue
+                sp = self.app.art["bandit"]
+                surf.blit(sp, (cx - sp.get_width() // 2,
+                               cy - sp.get_height() // 2))
                 draw_text(surf, sf, "%d robbers" % len(p.unit_ids),
-                          cx + 10, cy - 4, (30, 20, 12))
+                          cx + 12, cy + 8, (90, 24, 18))
                 continue
             if p.unit_ids:
                 u = c.units[p.unit_ids[0]]
@@ -304,8 +330,17 @@ class CampaignScreen:
                               h.garrison_cap(), len(hp.unit_ids) if hp else 0,
                               1 + C.COMPANY_CAP), x, 148, (70, 50, 30))
         if self.hint:
-            draw_text(surf, f["small"], self.hint[:46], x, 260, (90, 40, 30))
-        y = 360
+            draw_text(surf, f["small"], self.hint[:46], x, 430, (90, 40, 30))
+        draw_text(surf, f["small"], "Robber bands:", x, 462, (90, 35, 24))
+        y = 484
+        for party in self.bandit_parties():
+            leader = c.units.get(party.unit_ids[0]) if party.unit_ids else None
+            label = "%d: %s (%d)" % (party.pid,
+                                     leader.name if leader else "raiders",
+                                     party.size())
+            draw_text(surf, f["small"], label[:42], x, y, (100, 35, 25))
+            y += 19
+        y = max(y + 8, 560)
         for note in c.notes[-6:][::-1]:
             draw_text(surf, f["small"], note[:48], x, y, (90, 74, 52))
             y += 20

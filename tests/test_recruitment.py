@@ -101,6 +101,20 @@ def test_garrison_cannot_march():
         assert "garrison" in ch.reason
 
 
+def test_close_returns_exactly_one_population_for_any_building():
+    c = game(seed=31)
+    r = c.player
+    sid = r.settlement_ids[0]
+    h = c.settlements[sid]
+    for staffed in (False, True):
+        h.buildings[C.BUILDING_FARM] = Building(C.BUILDING_FARM, staffed)
+        before = r.population
+        result = c.close_building(sid, C.BUILDING_FARM)
+        assert result.ok
+        assert C.BUILDING_FARM not in h.buildings
+        assert r.population == before + 1
+
+
 def test_march_limited_by_movement_points():
     c = game()
     hp = c.hero_party(c.player.key)
@@ -286,11 +300,8 @@ def test_hero_death_removes_hero_flag_only_with_heir():
     r = c.player
     if r.heir is None:
         cand = [x for x in r.unit_ids if x != r.hero]
-        if cand:
-            c.designate_heir(cand[0])
-    if r.heir is None:
-        assert True
-        return
+        assert cand
+        assert c.designate_heir(cand[0]).ok
     old = r.hero
     c.units[old].alive = False
     c._ensure_succession(r)
@@ -307,7 +318,8 @@ def test_field_company_cannot_march_without_hero():
     c.units[r.hero].alive = False
     c._ensure_succession(r)
     if r.hero is not None:
-        assert True  # a town raised a new commander; nothing to prove
+        assert c.units[r.hero].alive
+        assert r.hero in hp.unit_ids
         return
     # no hero at the head -> march is rejected
     target = None

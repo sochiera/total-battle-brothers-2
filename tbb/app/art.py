@@ -326,3 +326,25 @@ def unit_sprite_sheet(colors=((150, 40, 40), (35, 80, 160), (45, 120, 65),
             sheet[(sector, kit)] = unit_sprite(col, kit)
             sheet[(sector, kit, True)] = unit_sprite(col, kit, hero=True)
     return sheet
+
+
+def bandit_sprite():
+    """A separate road-raider silhouette, not a duchy-coloured unit."""
+    s = _new(22, 26)
+    cloak = (58, 35, 30)
+    scarf = (166, 45, 28)
+    metal = (156, 145, 122)
+    for y in range(9, 22):
+        width = 4 + (y - 9) // 4
+        for x in range(11 - width, 11 + width):
+            _px(s, x, y, cloak)
+    for y in range(4, 9):
+        for x in range(8, 14):
+            _px(s, x, y, (112, 100, 86))
+    for x in range(6, 16):
+        _px(s, x, 8, scarf)
+    for y in range(8, 21):
+        _px(s, 18, y, metal)
+    for x in range(16, 21):
+        _px(s, x, 8, metal)
+    return s

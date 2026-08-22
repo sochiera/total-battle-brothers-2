@@ -309,10 +309,7 @@ class Generator:
             realm = Realm(key, N.realm_name(self.rng), is_player=(key == 0),
                           color=colors[i])
             self.realms[key] = realm
-            if realm.is_player or True:
-                sizes = self.starting_holdings()
-            else:
-                sizes = self.starting_holdings()
+            sizes = self.starting_holdings()
             cap_cell = center
             used = [cap_cell]
             self.place_holding(realm, cap_cell, sizes[0])

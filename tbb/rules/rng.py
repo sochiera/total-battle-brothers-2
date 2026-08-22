@@ -6,7 +6,7 @@ are applied. Its internal state is stored with each save so a loaded campaign
 continues the exact same random stream.
 
 Seeds and branch tags are mixed with SHA-256 so determinism never depends on
-PYTHONHASHSEED or the identity `hash()` function.
+interpreter hash randomisation.
 """
 import hashlib
 import random

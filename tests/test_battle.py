@@ -88,6 +88,28 @@ def test_melee_range_and_bow_only():
     assert "no bow" in r2.reason
 
 
+def test_melee_and_bow_have_explicit_hex_ranges():
+    c = make_game(seed=19)
+    b = forced_battle(c)
+    attacker = active_attacker(b)
+    origin = b.position_of(attacker)
+    cells = sorted(b.canvas, key=lambda p: B.G.hex_distance(origin, p))
+    adjacent = next(p for p in cells if B.G.hex_distance(origin, p) == 1)
+    distance_two = next(p for p in cells if B.G.hex_distance(origin, p) == 2)
+    distance_four = (origin[0] + 4, origin[1])
+    foe = c.units[b.sides["defender"][0]]
+    b.positions[foe.id] = adjacent
+    assert b.melee_in_range(attacker, foe)
+    b.positions[foe.id] = distance_two
+    assert not b.melee_in_range(attacker, foe)
+    attacker.kit = C.KIT_POOR
+    assert foe not in b.ranged_targets(attacker)
+    attacker.kit = "bow"
+    assert foe in b.ranged_targets(attacker)
+    b.positions[foe.id] = distance_four
+    assert not b.ranged_in_range(attacker, foe)
+
+
 def test_morale_raises_hit_chance_only():
     # the morale term multiplies only the hit window (no crits, no damage)
     lo = B.morale_hit_term(20)

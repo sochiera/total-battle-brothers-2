@@ -19,6 +19,7 @@ class SaveScreen:
 
     def refresh(self):
         self.slots = Persist.list_slots()
+        self._buttons = self._make_buttons()
         if self.selected is not None and self.selected not in self.slots:
             self.selected = None
 
@@ -27,7 +28,7 @@ class SaveScreen:
         if self.app.campaign is None:
             self.hint = "no game in progress"
             return
-        name = (self.selected or self.name or "autosave").strip()
+        name = (self.name.strip() or self.selected or "autosave").strip()
         if not name:
             name = "autosave"
         try:
@@ -41,7 +42,7 @@ class SaveScreen:
             self.hint = "save failed: %s" % e
 
     def do_load(self):
-        name = self.selected or self.name.strip()
+        name = self.name.strip() or self.selected
         if not name:
             self.hint = "type or pick a slot"
             return
@@ -78,6 +79,7 @@ class SaveScreen:
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
             if self._name_rect().collidepoint(ev.pos):
                 return
+            self._buttons = self._make_buttons()
             for b in self._buttons:
                 if b.hit(ev.pos[0], ev.pos[1]):
                     b.on_click()
@@ -89,14 +91,20 @@ class SaveScreen:
                 return
         elif ev.type == pygame.KEYDOWN:
             if ev.key == pygame.K_BACKSPACE:
-                self.selected = None
-                self.app.mode = "title" if self.app.campaign is None else \
-                    "campaign"
+                if self.name:
+                    self.name = self.name[:-1]
+                else:
+                    self.selected = None
+                    self.app.mode = "title" if self.app.campaign is None else \
+                        "campaign"
+                return
+            if ev.key == pygame.K_ESCAPE:
+                self.do_back()
                 return
             if ev.key == pygame.K_RETURN:
                 if self.mode == "save":
                     self.do_save()
-                elif self.selected:
+                elif self.selected or self.name.strip():
                     self.do_load()
                 return
             if ev.unicode and len(self.name) < 24 and \
@@ -149,7 +157,8 @@ class SaveScreen:
             pygame.draw.rect(surf, (92, 60, 34), row, 1)
             draw_text(surf, f["small"], name, row.x + 6, row.y + 10,
                       (30, 20, 12))
-        for b in self._make_buttons():
+        self._buttons = self._make_buttons()
+        for b in self._buttons:
             b.draw(surf, f["small"])
         if self.hint:
             draw_text(surf, f["small"], self.hint, 24, SCREEN_H - 40,

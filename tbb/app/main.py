@@ -21,6 +21,7 @@ def build_art():
         "terrain": art.terrain_sprites(),
         "settle": art.settlement_sprite_sheet(),
         "unit": art.unit_sprite_sheet(),
+        "bandit": art.bandit_sprite(),
         "hero": art.hero_banner((255, 220, 120)),
     }
 
@@ -133,7 +134,9 @@ class App:
 
     # ------------------------------------------------------------- flow
     def new_game(self, seed=None):
-        self.campaign = Campaign(seed if seed is not None else C.DEFAULT_SEED)
+        if seed is None:
+            seed = self.title_screen._seed()
+        self.campaign = Campaign(seed)
         self.campaign_screen.load(self.campaign)
         self.settlement_screen.load(self.campaign,
                                     (self.campaign.player.settlement_ids
@@ -163,8 +166,9 @@ class App:
         self.mode = "campaign"
 
     # --------------------------------------------------------------- loop
-    def run(self):
+    def run(self, frames=None):
         running = True
+        drawn = 0
         while running:
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
@@ -174,6 +178,9 @@ class App:
             self._draw()
             pygame.display.flip()
             self.clock.tick(60)
+            drawn += 1
+            if frames is not None and drawn >= frames:
+                running = False
         pygame.quit()
 
     def _dispatch(self, ev):

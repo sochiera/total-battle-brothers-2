@@ -33,7 +33,7 @@ class Calendar:
     def __repr__(self):
         return "Calendar(%r)" % self.label()
 
-    # pickling niceties
+    # Small state helpers used by the save schema.
     def snapshot(self):
         return (self.year, self.month)
 

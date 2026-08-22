@@ -5,6 +5,12 @@ PYBIN=$(VENV)/bin/python3
 .PHONY: venv install run test clean
 
 venv: $(VENV)/bin/python3
+	@if [ ! -x $(VENV)/bin/pip ]; then \
+		echo "(python3-venv/ensurepip is missing - install it and recreate .venv)"; \
+		echo; echo "    sudo apt install python3-venv"; \
+		echo "    rm -rf .venv && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"; \
+		exit 1; \
+	fi
 	$(VENV)/bin/pip install -q -r requirements.txt
 
 $(VENV)/bin/python3:

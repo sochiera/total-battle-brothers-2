@@ -45,10 +45,8 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-(On a Linux install whose Python lacks `ensurepip`—the `python3-venv`
-package is missing—`python3 -m venv .venv` itself fails; install it with
-`sudo apt install python3-venv` first. Nothing is ever installed with
-`--break-system-packages`.)
+(On a Linux install whose Python lacks `ensurepip` because the `python3-venv`
+package is missing, install it with `sudo apt install python3-venv` first.)
 
 ## Playing
 
@@ -62,6 +60,8 @@ or, equivalently, with a specific seed:
 ./run.sh
 .venv/bin/python3 -m tbb
 .venv/bin/python3 -m tbb --seed 12345
+.venv/bin/python3 -m tbb --seed 12345 --new-game
+.venv/bin/python3 -m tbb --seed 12345 --new-game --resolve-battle --frames 45
 ```
 
 The windowed game opens on the title screen. Type a number for a seed, or run
@@ -76,17 +76,20 @@ with the default seed, and press **New Game** (or just press Enter).
 | Title | focus the seed box | click the box, type digits |
 | Campaign | select a hero company | click the hero's hex |
 | Campaign | march the selected company | click an adjacent hex |
-| Campaign | pan the map | arrow keys |
-| Campaign | resolve a waiting battle | **B** or the panel button |
+| Campaign | pan the map | **Left / Right / Up / Down** |
+| Campaign | open a waiting battle | **B** or the panel button |
+| Campaign | auto-resolve pending battles | **A** |
 | Campaign | end the month (turn) | **M** or the panel button |
 | Campaign | open the selected settlement | **O** or the panel button |
 | Campaign | found a village / exit found mode | **F** or the panel button |
-| Campaign | save / load (named slots) | **S** / **L** or the panel buttons |
-| Campaign | return to title | **Esc** (twice: first clears found mode) |
-| Settlement | build / staff / close a building | click the row (building roster shown by name) |
+| Campaign | save / load (named slots) | **S** / **L** or the panel buttons; **Enter**, **Backspace**, **Esc** on the slot screen |
+| Campaign | return to title / cancel found mode | **Esc** |
+| Settlement | build / staff / unstaff / close a building | click the named controls |
+| Settlement | train / gear field warriors | click the control; use **More warriors** pages |
 | Settlement | recruit garrison / company | click the row |
 | Settlement | develop to next size, found on map | click the row |
 | Settlement | name a new heir | click a soldier's name in the right-hand list |
+| Settlement | page the heir list | click **Previous heirs** / **More heirs** |
 | Settlement | back to the map | **Esc** / **O** |
 | Battle | select one of your warriors | click the warrior |
 | Battle | move / strike | click a hex / a foe |
@@ -130,11 +133,11 @@ returns 1 population to the pool and frees a building slot.
   imports, fully unit-tested headlessly. All cost/formula constants live in
   `tbb/rules/constants.py`.
 - `tbb/app/` — the pygame presentation, importing rules read-only.
-- Saves are **plain JSON** (`saves/*.tbb`) written by `tbb/rules/save.py`:
+- Saves are **versioned plain JSON** (`saves/*.tbb`) written by `tbb/rules/save.py`:
   every piece of a mid-campaign state — calendar, world grid, holdings and
   buildings, named units with talents/wounds/kit, orders still in flight,
   parties, heirs and the random stream — so files are inspectable, portable
-  between machines, and carry no pickled code.
+  between machines, and carry no executable objects.
 - Art is **original, procedurally painted in-repo** (`tbb/app/art.py`):
   dithered terrain, gabled villages, palisade towns, keeps, and unit
   silhouettes for every kit.
@@ -149,6 +152,8 @@ returns 1 population to the pool and frees a building slot.
   immediately playable duchy. There is no scripted story anywhere.
 - Launcher errors clearly when the venv is missing (`./run.sh` prints the
   exact `python3 -m venv` + `pip install` commands).
+- Not included: multiplayer, networking, or a story campaign. The sandbox has
+  no scripted objectives beyond its rules victory and defeat conditions.
 
 ## Summary
 
@@ -156,7 +161,6 @@ A complete, deterministic rules engine with economy, recruitment, talent
 training, movement, contact and capped hex battles, succession and
 victory/defeat; a windowed pygame client with original procedurally-drawn
 2D art and runtime-synthesised audio; named save/load from title and in-game.
-Test evidence: the headless suite covers economy, recruitment and garrison
-constraints, training vs. exp divergence, movement/multi-month crossings and
-contact, battle hit/morale logic, succession, victory/defeat and a
-save-roundtrip — `make test` (pytest) passes the full suite.
+Test evidence: `python3 -m pytest -q` passes 77 headless tests covering
+economy, recruitment and garrison constraints, movement/contact, battle
+hit/morale logic, succession, victory/defeat and JSON save continuation.

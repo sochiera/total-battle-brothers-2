@@ -34,6 +34,20 @@ def test_five_duchies_and_neutrals_and_bandits():
         assert C.MIN_BANDITS <= len(bandits) <= C.MAX_BANDITS
 
 
+def test_bandit_parties_present_and_visible():
+    """Every live bandit party in campaign state is presented by the map."""
+    from tbb.rules.campaign import Campaign
+    from tbb.app.campaign_screen import CampaignScreen
+
+    campaign = Campaign(734102)
+    screen = CampaignScreen.__new__(CampaignScreen)
+    screen.campaign = campaign
+    expected = [p.pid for p in campaign.parties if p.kind == "bandit"
+                and any(campaign.units[u].alive for u in p.unit_ids)]
+    assert len(expected) in (2, 3, 4)
+    assert screen.visible_bandit_pids() == expected
+
+
 def test_duchy_holdings_mixed_and_varying_by_seed():
     starts = []
     for seed in (11, 12, 13, 14, 15, 16, 17, 18):
