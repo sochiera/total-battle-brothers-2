@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tbb"
+version = "0.1.0"
+description = "Total Battle Brothers - grim medieval realm-and-company sandbox"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["tbb", "tbb.app", "tbb.rules"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
