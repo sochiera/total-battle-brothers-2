@@ -15,7 +15,18 @@ def main(argv=None):
                         help="auto-resolve any pending battle after launch")
     parser.add_argument("--frames", type=int, default=None,
                         help="exit after K rendered frames (smoke testing)")
+    parser.add_argument("--save-smoke", metavar="SLOT",
+                        help="write and load a pygame-free named save slot")
     args = parser.parse_args(argv)
+    if args.save_smoke:
+        from tbb.rules.campaign import Campaign
+        from tbb.rules import constants as C
+        from tbb.rules import persistence
+        campaign = Campaign(args.seed if args.seed is not None else C.DEFAULT_SEED)
+        persistence.save(campaign, args.save_smoke)
+        if persistence.load(args.save_smoke) is None:
+            raise RuntimeError("save smoke slot could not be loaded")
+        return 0
     from tbb.app.main import App
 
     app = App()

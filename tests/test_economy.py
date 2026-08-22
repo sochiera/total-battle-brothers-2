@@ -33,3 +33,31 @@ def test_ai_uses_staffed_development_army_and_can_create_contacts():
     campaign.end_turn()
     assert any(realm.orders or len(campaign.living_in_party(campaign.hero_party(realm.key))) > 1
                for realm in campaign.realms.values() if not realm.is_player)
+
+
+def test_ai_month_has_priority_order_and_non_player_path_target():
+    campaign = Campaign(734102)
+    for realm in campaign.realms.values():
+        realm.gold = realm.wheat = 600
+        realm.population = 50
+    campaign.end_turn()
+    rivals = [realm for realm in campaign.realms.values() if not realm.is_player]
+    assert all(realm.ai_target is not None for realm in rivals)
+    assert any(order.kind in {"build", "recruit", "train", "gear"}
+               for realm in rivals for order in realm.orders)
+    assert any(campaign.settlements[realm.ai_target].owner != realm.key
+               for realm in rivals)
+
+
+def test_fractional_births_and_immigration_carry_between_months():
+    campaign = Campaign(15)
+    realm = campaign.player
+    realm.population = 18
+    realm.population_fraction = 0.0
+    realm.wheat = 1000
+    realm.morale = 70
+    starting = realm.population
+    campaign._account(realm)
+    assert realm.population_fraction > 0
+    campaign._account(realm)
+    assert realm.population >= starting

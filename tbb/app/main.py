@@ -24,6 +24,8 @@ def build_art():
         "unit": art.unit_sprite_sheet(),
         "bandit": art.bandit_sprite(),
         "hero": art.hero_banner((255, 220, 120)),
+        "banner": art.banner_sprites(),
+        "ui": art.ui_chrome(),
     }
 
 
@@ -188,6 +190,7 @@ class App:
             drawn += 1
             if frames is not None and drawn >= frames:
                 running = False
+        self.audio.music_stop()
         pygame.quit()
 
     def _dispatch(self, ev):

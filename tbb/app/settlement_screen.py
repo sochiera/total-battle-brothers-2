@@ -152,6 +152,9 @@ class SettlementScreen:
             return "need %dw wheat" % spec["wheat"]
         return None
 
+    def _equip_reason(self, uid, kit):
+        return self._gear_reason(uid, kit)
+
     def _develop_reason(self):
         realm, holding = self._realm(), self._holding()
         target = self._nextsize()
@@ -234,7 +237,9 @@ class SettlementScreen:
                                 (356, True, "Recruit company")):
             reason = self._recruit_reason(field)
             out.append(Button(x, recruit_y, 320, 28,
-                              self._with_reason(label + " (10g, 2w, 1 month)", reason),
+                              self._with_reason(label + " (%dg, %dw, %d month)" %
+                                                (C.RECRUIT_GOLD, C.RECRUIT_WHEAT,
+                                                 C.RECRUIT_COST["months"]), reason),
                               self.do_recruit_c if field else self.do_recruit_g,
                               enabled=reason is None))
         target = self._nextsize()
@@ -269,7 +274,7 @@ class SettlementScreen:
                               self._with_reason("Train " + unit.name, train_reason),
                               lambda i=uid: self.do_train(i), enabled=train_reason is None))
             kit = self._preferred_kit(unit)
-            gear_reason = self._gear_reason(uid, kit)
+            gear_reason = self._equip_reason(uid, kit)
             out.append(Button(326, y, 340, 26,
                               self._with_reason("Equip %s: %s" % (unit.name, C.KITS[kit]["name"]), gear_reason),
                               lambda i=uid, k=kit: self.do_gear(i, k), enabled=gear_reason is None))

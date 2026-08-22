@@ -13,14 +13,39 @@ def priority_buildings():
     return list(C.AI_DEVELOP_PRIORITY)
 
 
-def nearest_hostile(campaign, realm_key, origin):
+def _holding_strength(campaign, holding):
+    guard = campaign.garrison_party(holding.id)
+    if not guard:
+        return 0
+    return sum(campaign.units[uid].stat("melee")
+               for uid in guard.unit_ids if campaign.units[uid].alive)
+
+
+def _target_score(campaign, holding, origin):
+    """Prefer an exposed holding, with a small preference for neutrals."""
+    strength = _holding_strength(campaign, holding) / 30.0
+    weakness = max(0.0, 12.0 - strength)
+    neutral_bonus = 3.0 if holding.owner is None else 0.0
+    distance = G.hex_distance(origin, holding.hex)
+    return weakness * 2.0 + neutral_bonus - distance
+
+
+def choose_march_target(campaign, realm_key, origin, bandit=False):
     options = []
-    for key, realm in campaign.realms.items():
-        if key == realm_key or realm.destroyed:
+    for holding in campaign.settlements.values():
+        if not bandit and holding.owner == realm_key:
             continue
-        for sid in realm.settlement_ids:
-            options.append((G.hex_distance(origin, campaign.settlements[sid].hex), sid))
-    return min(options)[1] if options else None
+        if holding.owner is not None:
+            other = campaign.realms.get(holding.owner)
+            if other is None or other.destroyed:
+                continue
+        options.append((_target_score(campaign, holding, origin), holding.id))
+    return max(options)[1] if options else None
+
+
+def nearest_hostile(campaign, realm_key, origin):
+    """Choose a reachable weak holding, not a hard-coded player capital."""
+    return choose_march_target(campaign, realm_key, origin)
 
 
 def run_ai_turn(campaign):
@@ -44,8 +69,8 @@ def _staff_existing(campaign, realm):
         for building in holding.buildings.values():
             if building.staffed:
                 continue
-            if realm.population - realm.staff_total(campaign.settlements) - 1 < 1:
-                return
+            if not campaign._can_spend_population(realm):
+                continue
             building.staffed = True
             realm.population -= 1
 
@@ -191,6 +216,7 @@ def _march(campaign, realm):
         sid = nearest_hostile(campaign, realm.key, party.hex)
         if sid is None:
             return
+        realm.ai_target = sid
         goal = campaign.settlements[sid].hex
         route = pathfind.a_star(campaign.world, party.hex, goal)
         if len(route) < 2:
@@ -211,13 +237,28 @@ def _march(campaign, realm):
 
 
 def _bandits_month(campaign):
-    wild = (C.TERRAIN_FOREST, C.TERRAIN_RUINS, C.TERRAIN_ROAD)
     for party in campaign.parties:
         if party.kind != "bandit":
             continue
-        options = [pos for pos in campaign.world.neighbours(party.hex)
-                   if campaign.world.terrain(pos) in wild and
-                   campaign.world.is_passable(pos)]
-        if options:
-            party.move_to(campaign.rng.choice(options))
+        if not party.alive_units(campaign.units):
+            continue
+        target_id = choose_march_target(campaign, None, party.hex, bandit=True)
+        if target_id is None:
+            continue
+        target = campaign.settlements[target_id]
+        route = pathfind.a_star(campaign.world, party.hex, target.hex)
+        if len(route) < 2:
             campaign._scan_contacts_for(party)
+            continue
+        step = route[1]
+        cost = G.move_cost(campaign.world.terrain(step),
+                           campaign.world.crossing(step))
+        if (campaign.world.terrain(step) == C.TERRAIN_ROAD and
+                not party.road_bonus):
+            party.mp += C.ROAD_MOVEMENT_BONUS
+            party.road_bonus = True
+        if cost is None or party.mp < cost:
+            continue
+        party.mp -= cost
+        party.move_to(step)
+        campaign._scan_contacts_for(party)

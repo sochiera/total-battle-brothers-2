@@ -54,11 +54,12 @@ class Generator:
         if not options: return None
         return self.rng.choice(options)
 
-    def _sizes(self):
-        roll = self.rng.random()
-        if roll < .30: return [C.SIZE_V]
-        if roll < .65: return [C.SIZE_T, C.SIZE_V]
-        return [C.SIZE_V, C.SIZE_T, C.SIZE_V]
+    def _archetype(self):
+        names = tuple(C.START_ARCHETYPES)
+        return self.rng.choice(names)
+
+    def _sizes(self, archetype):
+        return self.rng.choice(C.START_ARCHETYPES[archetype])
 
     def _make_unit(self, realm_key, hero=False, origin="the road"):
         taken = self.taken.setdefault(realm_key, set())
@@ -99,7 +100,11 @@ class Generator:
 
     def _create_realm(self, key, center):
         realm = Realm(key, N.realm_name(self.rng), key == C.PLAYER_REALM_KEY, COLORS[key])
-        self.realms[key] = realm; sizes = self._sizes(); used = [center]
+        self.realms[key] = realm
+        archetype = self._archetype()
+        realm.start_archetype = archetype
+        sizes = self._sizes(archetype)
+        used = [center]
         for index, size in enumerate(sizes):
             pos = center if index == 0 else self._far_cell(self.suitable_cells(), used, 2)
             if pos is None: continue

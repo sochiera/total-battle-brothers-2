@@ -52,14 +52,64 @@ def test_battle_engine_writes_wound_and_death_then_party_writeback():
     assert defender2.id not in battle2.defender.unit_ids
 
 
+def test_battle_grid_morale_ranges_wound_and_death():
+    wound_campaign, wound_battle = _battle(240)
+    wound_attacker, wounded = _adjacent(wound_battle)
+    wound_battle.hit_chance = lambda *_args, **_kwargs: 1.0
+    wounded.max_hit_points = 20
+    wounded.current_hit_points = wounded.max_hit_points
+    wounds_before = len(wounded.wounds)
+    wound = wound_battle.do_melee(wound_attacker, wounded)
+    assert wound.hit and len(wounded.wounds) > wounds_before
+    assert wounded.alive
+
+    death_campaign, death_battle = _battle(241)
+    death_attacker, near_dead = _adjacent(death_battle)
+    death_battle.hit_chance = lambda *_args, **_kwargs: 1.0
+    near_dead.current_hit_points = 1
+    killed = death_battle.do_melee(death_attacker, near_dead)
+    assert killed.hit and near_dead.alive is False
+    assert near_dead.alive is False
+    assert near_dead.id in death_battle.defender.unit_ids
+    death_campaign.resolve_battle(death_battle)
+    assert near_dead.id not in death_battle.defender.unit_ids
+
+    campaign, battle = _battle(24)
+    attacker, defender = _adjacent(battle)
+    attacker.kit = "bow"
+    battle.positions[attacker.id] = (2, 2)
+    battle.positions[defender.id] = (4, 2)
+    battle.canvas[(3, 2)] = C.TERRAIN_FOREST
+    assert not battle._line_clear((2, 2), (4, 2))
+    assert not battle.do_ranged(attacker, defender).ok
+
+    clear_campaign, clear_battle = _battle(25)
+    bowman, target = _adjacent(clear_battle)
+    bowman.kit = "bow"
+    clear_battle.positions[bowman.id] = (2, 2)
+    clear_battle.positions[target.id] = (4, 2)
+    clear_battle.canvas[(3, 2)] = C.TERRAIN_PLAINS
+    clear_battle.hit_chance = lambda *_args, **_kwargs: 1.0
+    result = clear_battle.do_ranged(bowman, target)
+    assert result.ok and result.hit
+    assert clear_battle.ranged_in_range(bowman, target)
+
+    near_campaign, near_battle = _battle(26)
+    near_attacker, near_target = _adjacent(near_battle)
+    near_battle.positions[near_attacker.id] = (2, 2)
+    near_battle.positions[near_target.id] = (3, 2)
+    assert not near_battle.ranged_in_range(near_attacker, near_target)
+    near_battle.positions[near_target.id] = (6, 2)
+    assert not near_battle.ranged_in_range(near_attacker, near_target)
+
+
 def test_battle_los_uses_hex_intermediate_cells_and_terrain_modifiers():
     campaign, battle = _battle(24)
     attacker, defender = _adjacent(battle)
-    bow = next((u for u in campaign.units.values() if u.realm == 0 and
-                C.KITS[u.kit]["bow"]), None)
-    if bow is not None:
-        battle.positions[bow.id] = (2, 2)
-        defender_id = battle.sides["defender"][0]
-        battle.positions[defender_id] = (4, 3)
-        campaign.world.set_terrain((3, 2), C.TERRAIN_FOREST)
-        assert not battle._line_clear((2, 2), (4, 3))
+    bow = campaign.units[battle.sides["attacker"][0]]
+    bow.kit = "bow"
+    battle.positions[bow.id] = (2, 2)
+    defender_id = battle.sides["defender"][0]
+    battle.positions[defender_id] = (4, 3)
+    battle.canvas[(3, 2)] = C.TERRAIN_FOREST
+    assert not battle._line_clear((2, 2), (4, 3))

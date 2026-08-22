@@ -6,12 +6,23 @@ rectangles: dithered terrain, tree silhouettes, gabled houses, castles,
 spear/bow/armour unit marks and parchment UI panels.
 """
 import random
+from pathlib import Path
 
 import pygame
 
 from ..rules import constants as C
 
 _TRANSPARENT = (0, 0, 0, 0)
+ASSET_ROOT = Path(__file__).resolve().parents[2] / "assets"
+
+
+def _png(relative, fallback=None):
+    path = ASSET_ROOT / relative
+    try:
+        image = pygame.image.load(str(path))
+        return image.convert_alpha() if pygame.display.get_surface() else image
+    except (FileNotFoundError, pygame.error):
+        return fallback() if fallback else None
 
 
 def _px(surf, x, y, color):
@@ -52,15 +63,21 @@ def _grass_tile(seed, base=(96, 118, 74)):
 
 def terrain_sprites():
     sp = {}
-    sp[C.TERRAIN_PLAINS] = _grass_tile(1)
-    sp[C.TERRAIN_FOREST] = woods_tile(2)
-    sp[C.TERRAIN_HILLS] = hill_tile(3)
-    sp[C.TERRAIN_RIVER] = river_tile(4)
-    sp[(C.TERRAIN_RIVER, "ford")] = crossing_tile(8, "ford")
-    sp[(C.TERRAIN_RIVER, "bridge")] = crossing_tile(9, "bridge")
-    sp[C.TERRAIN_ROAD] = road_tile(5)
-    sp[C.TERRAIN_RUINS] = ruins_tile(6)
-    sp[C.TERRAIN_VILLAGE] = village_tile(7)
+    fallbacks = {
+        C.TERRAIN_PLAINS: lambda: _grass_tile(1),
+        C.TERRAIN_FOREST: lambda: woods_tile(2),
+        C.TERRAIN_HILLS: lambda: hill_tile(3),
+        C.TERRAIN_RIVER: lambda: river_tile(4),
+        C.TERRAIN_ROAD: lambda: road_tile(5),
+        C.TERRAIN_RUINS: lambda: ruins_tile(6),
+        C.TERRAIN_VILLAGE: lambda: village_tile(7),
+    }
+    for terrain, fallback in fallbacks.items():
+        sp[terrain] = _png("tiles/%s.png" % terrain, fallback)
+    sp[(C.TERRAIN_RIVER, "ford")] = _png(
+        "tiles/ford.png", lambda: crossing_tile(8, "ford"))
+    sp[(C.TERRAIN_RIVER, "bridge")] = _png(
+        "tiles/bridge.png", lambda: crossing_tile(9, "bridge"))
     return sp
 
 
@@ -225,10 +242,6 @@ def city_sprite(col):
     return s
 
 
-def _apply(s, fn_base):
-    pass
-
-
 # --------------------------------------------------------------- UI chrome
 def parchment(w, h, base=(228, 208, 164)):
     s = _new(w, h)
@@ -321,7 +334,9 @@ def settlement_sprite_sheet(colors=((150, 40, 40), (35, 80, 160),
     sheet = {}
     for sector, col in enumerate(list(colors) + [(120, 60, 30)]):
         for size in C.SIZE_ORDER:
-            sheet[(sector, size)] = settlement_sprite(size, col)
+            sheet[(sector, size)] = _png(
+                "settlements/%s.png" % size,
+                lambda size=size, col=col: settlement_sprite(size, col))
     return sheet
 
 
@@ -330,13 +345,33 @@ def unit_sprite_sheet(colors=((150, 40, 40), (35, 80, 160), (45, 120, 65),
     sheet = {}
     for sector, col in enumerate(list(colors) + [(90, 90, 60)]):
         for kit in list(C.KITS):
-            sheet[(sector, kit)] = unit_sprite(col, kit)
-            sheet[(sector, kit, True)] = unit_sprite(col, kit, hero=True)
+            role = "bow" if C.KITS[kit]["bow"] else "melee"
+            sheet[(sector, kit)] = _png(
+                "units/%s.png" % role,
+                lambda col=col, kit=kit: unit_sprite(col, kit))
+            sheet[(sector, kit, True)] = _png(
+                "units/hero.png",
+                lambda col=col, kit=kit: unit_sprite(col, kit, hero=True))
     return sheet
 
 
-def bandit_sprite():
-    """A separate road-raider silhouette, not a duchy-coloured unit."""
+def banner_sprites():
+    return {
+        index: _png("banners/banner_%d.png" % index,
+                    lambda: hero_banner((220, 190, 110)))
+        for index in range(C.NUM_DUCHIES)
+    }
+
+
+def ui_chrome():
+    return {
+        "panel": _png("ui/panel.png"),
+        "button": _png("ui/button.png"),
+    }
+
+
+def _procedural_bandit_sprite():
+    """Fallback road-raider silhouette, not a duchy-coloured unit."""
     s = _new(22, 26)
     cloak = (58, 35, 30)
     scarf = (166, 45, 28)
@@ -355,3 +390,7 @@ def bandit_sprite():
     for x in range(16, 21):
         _px(s, x, 8, metal)
     return s
+
+
+def bandit_sprite():
+    return _png("units/robber.png", _procedural_bandit_sprite)

@@ -7,8 +7,11 @@ If the platform has no audio device the engine silently disables sound.
 import math
 import random
 import struct
+from pathlib import Path
 
 import pygame
+
+ASSET_ROOT = Path(__file__).resolve().parents[2] / "assets" / "audio"
 
 
 class AudioEngine:
@@ -23,20 +26,36 @@ class AudioEngine:
             return
         self.ok = True
         self._rand = random.Random(11)
+        files = {"click": "ui_open.wav", "close": "ui_close.wav",
+                 "hit": "melee_hit.wav", "death": "death_cry.wav"}
+        fallbacks = {"click": lambda: self._click(1000),
+                     "close": lambda: self._click(700),
+                     "hit": self._hit, "death": self._death}
+        for name, filename in files.items():
+            try:
+                self.sounds[name] = pygame.mixer.Sound(str(ASSET_ROOT / filename))
+            except Exception:
+                try:
+                    self.sounds[name] = pygame.mixer.Sound(buffer=fallbacks[name]())
+                except Exception:
+                    pass
+        for name, buffer in (("bow", self._bow()), ("pain", self._pain()),
+                             ("cant", self._click(180))):
+            try:
+                self.sounds[name] = pygame.mixer.Sound(buffer=buffer)
+            except Exception:
+                pass
+        self.sounds["ui_open"] = self.sounds.get("click")
+        self.sounds["ui_close"] = self.sounds.get("close")
+        self.sounds["melee_hit"] = self.sounds.get("hit")
+        self.sounds["death_cry"] = self.sounds.get("death")
         try:
-            self.sounds["click"] = pygame.mixer.Sound(buffer=self._click(1000))
-            self.sounds["close"] = pygame.mixer.Sound(buffer=self._click(700))
-            self.sounds["hit"] = pygame.mixer.Sound(buffer=self._hit())
-            self.sounds["bow"] = pygame.mixer.Sound(buffer=self._bow())
-            self.sounds["pain"] = pygame.mixer.Sound(buffer=self._pain())
-            self.sounds["death"] = pygame.mixer.Sound(buffer=self._death())
-            self.sounds["cant"] = pygame.mixer.Sound(buffer=self._click(180))
+            self.ambient = pygame.mixer.Sound(str(ASSET_ROOT / "ambient_loop.wav"))
         except Exception:
-            pass
-        try:
-            self.ambient = pygame.mixer.Sound(buffer=self._ambient_loop())
-        except Exception:
-            self.ambient = None
+            try:
+                self.ambient = pygame.mixer.Sound(buffer=self._ambient_loop())
+            except Exception:
+                self.ambient = None
 
     # ------------------------------------------------------------- gen
     def _pcm(self, samples):

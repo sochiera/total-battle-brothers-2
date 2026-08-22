@@ -45,7 +45,9 @@ class Campaign:
         return max(values, default=0) + 1
     def _fresh_mp(self, party):
         points = C.CAMPAIGN_MOVEMENT_POINTS
-        if self.world.terrain(party.hex) == C.TERRAIN_ROAD:
+        on_road = self.world.terrain(party.hex) == C.TERRAIN_ROAD
+        party.road_bonus = on_road
+        if on_road:
             points += C.ROAD_MOVEMENT_BONUS
         if party.realm in self.realms and self.realms[party.realm].staffed(
                 self.settlements, C.BUILDING_STABLES):
@@ -152,7 +154,9 @@ class Campaign:
         return Check(True)
 
     def _can_spend_population(self, realm, amount=1):
-        return realm.population - realm_staffed(realm, self.settlements) - amount >= 1
+        staffed = realm_staffed(realm, self.settlements)
+        idle_after = realm.population - staffed - amount
+        return idle_after >= 1
 
     def _recruit(self, sid, field):
         if self.ended:
@@ -192,8 +196,11 @@ class Campaign:
                                   cost["months"], settlement_id=sid))
         return Check(True, "recruit arrives after one whole month")
 
-    def recruit_to_garrison(self, settlement_id): return self._recruit(settlement_id, False)
-    def recruit_to_company(self, settlement_id): return self._recruit(settlement_id, True)
+    def recruit_to_garrison(self, settlement_id):
+        return self._recruit(settlement_id, False)
+
+    def recruit_to_company(self, settlement_id):
+        return self._recruit(settlement_id, True)
 
     def staff_building(self, sid, kind):
         realm = self._realm_of_settlement(sid)
@@ -450,7 +457,6 @@ class Campaign:
         for party in self.parties:
             if party.kind in ("hero", "bandit"):
                 party.mp = self._fresh_mp(party)
-                party.road_bonus = False
         for realm in self.realms.values():
             self._resolve_realm_month(realm)
         self._ai_and_bandit_turn()
@@ -490,11 +496,14 @@ class Campaign:
                 realm.population < realm.holdings_cap(self.settlements)):
             growth = ((realm.population * C.BIRTH_RATE +
                        realm.population * C.IMMIGRATION_RATE) *
-                      (realm.morale / 100.0))
+                      (realm.morale / 100.0)) + realm.population_fraction
             whole = int(growth)
-            if self.rng.random() < growth-whole: whole += 1
             realm.population = min(realm.holdings_cap(self.settlements),
                                    realm.population + whole)
+            if realm.population >= realm.holdings_cap(self.settlements):
+                realm.population_fraction = 0.0
+            else:
+                realm.population_fraction = growth - whole
         realm.morale = max(0, min(
             100, realm.morale + realm.morale_from_holdings(self.settlements)))
 
@@ -512,7 +521,8 @@ class Campaign:
         done = []
         for order in realm.orders:
             order.months -= 1
-            if order.months <= 0: done.append(order)
+            if order.months <= 0:
+                done.append(order)
         realm.orders = [o for o in realm.orders if o.months > 0]
         for order in done:
             self._complete_order(realm, order)
@@ -530,10 +540,11 @@ class Campaign:
             party = (self.hero_party(realm.key)
                      if order.kind_data == "field" else
                      self.garrison_party(order.settlement_id))
-            allowed = party and ((order.kind_data == "field" and
-                                  len(party.unit_ids) < C.COMPANY_CAP) or
-                                 (order.kind_data == "garrison" and
-                                  len(party.unit_ids) < holding.garrison_cap()))
+            allowed = bool(party)
+            if allowed and order.kind_data == "field":
+                allowed = len(party.unit_ids) < C.COMPANY_CAP
+            if allowed and order.kind_data == "garrison":
+                allowed = len(party.unit_ids) < holding.garrison_cap()
             if allowed:
                 party.add(unit.id)
         elif order.kind == "develop":
@@ -564,6 +575,8 @@ class Campaign:
         heir = self.units.get(realm.heir) if realm.heir is not None else None
         if heir and heir.alive:
             new = heir
+            if hero:
+                hero.is_hero = False
             new.is_hero = True
             new.is_heir = False
             realm.hero = new.id
@@ -573,6 +586,9 @@ class Campaign:
             if party and new.id not in party.unit_ids:
                 if hero and hero.id in party.unit_ids:
                     party.remove(hero.id)
+                for other in self.parties:
+                    if other is not party:
+                        other.remove(new.id)
                 if len(party.unit_ids) < C.COMPANY_CAP:
                     party.add(new.id)
             for uid in realm.unit_ids:
@@ -582,6 +598,8 @@ class Campaign:
             return
         if realm.can_raise_hero(self.settlements):
             new = self._make_unit(realm.key, "the council", True)
+            if hero:
+                hero.is_hero = False
             realm.hero = new.id
             realm.unit_ids.add(new.id)
             realm.morale = max(0, realm.morale + C.MORALE_NEW_COMMANDER)
@@ -589,6 +607,9 @@ class Campaign:
             if party:
                 if hero and hero.id in party.unit_ids:
                     party.remove(hero.id)
+                for other in self.parties:
+                    if other is not party:
+                        other.remove(new.id)
                 if len(party.unit_ids) < C.COMPANY_CAP:
                     party.add(new.id)
             for uid in realm.unit_ids:
@@ -609,8 +630,19 @@ class Campaign:
         h = self.settlement_at(party.hex)
         if h and party.kind == "hero" and h.owner != party.realm:
             self._start_assault(party, self.garrison_party(h.id), h.id)
-        elif h and party.kind == "bandit" and h.owner is not None:
-            self._bandit_raid(party, h.id)
+        elif h and party.kind == "bandit":
+            if h.owner is not None:
+                self._bandit_raid(party, h.id)
+            else:
+                guard = self.garrison_party(h.id)
+                raiders = sum(self.units[i].stat("melee")
+                              for i in party.unit_ids
+                              if self.units[i].alive)
+                defenders = sum(self.units[i].stat("melee")
+                                for i in guard.unit_ids
+                                if self.units[i].alive) if guard else 0
+                if guard and guard.unit_ids and raiders > defenders:
+                    self._make_battle(party, guard, True)
         for other in self.parties:
             if (other.pid != party.pid and other.kind != "garrison" and
                     other.hex == party.hex and

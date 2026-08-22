@@ -1,11 +1,23 @@
 """Small shared presentation helpers used by the screen classes."""
 import math
+from pathlib import Path
 
 import pygame
 
 TS = 22
 SCREEN_W, SCREEN_H = 1280, 800
 PANEL_W = 340
+_CHROME = {}
+
+
+def _chrome(name):
+    if name not in _CHROME:
+        try:
+            path = Path(__file__).resolve().parents[2] / "assets" / "ui" / (name + ".png")
+            _CHROME[name] = pygame.image.load(str(path)).convert_alpha()
+        except (FileNotFoundError, pygame.error):
+            _CHROME[name] = False
+    return _CHROME[name] or None
 
 
 def hex_center(q, r, ox=0, oy=0, ts=TS):
@@ -19,17 +31,11 @@ def pick_hex(px, py, ox=0, oy=0, ts=TS):
     y = (py - oy) / (ts * 1.5)
     qf = x - 0.5 * y
     rf = y
-    q, r = round(qf), round(rf)
-    s = -q - r
     sf = -qf - rf
-    if abs(s - sf) > abs(q - qf) and abs(s - sf) > abs(r - rf):
-        q = round(qf - s + (-qf - rf))
-        # q = round(-rf - sf_removed)
-        q = round(-rf - (-sf if False else sf)) if False else round(-qf - sf + 0)
-    # cube rounding (robust path)
-    import math
-    xr, yr, zr = round(qf), round(rf), round(-qf - rf)
-    xdiff = abs(xr - qf); ydiff = abs(yr - rf); zdiff = abs(zr - (-qf - rf))
+    xr, yr, zr = round(qf), round(rf), round(sf)
+    xdiff = abs(xr - qf)
+    ydiff = abs(yr - rf)
+    zdiff = abs(zr - sf)
     if xdiff > ydiff and xdiff > zdiff:
         xr = -yr - zr
     elif ydiff > zdiff:
@@ -48,6 +54,11 @@ def hex_corners(cx, cy, ts=TS):
 
 def draw_panel(surf, x, y, w, h, title=None, font=None):
     pygame.draw.rect(surf, (218, 200, 158), (x, y, w, h))
+    texture = _chrome("panel")
+    if texture:
+        for yy in range(y, y + h, texture.get_height()):
+            for xx in range(x, x + w, texture.get_width()):
+                surf.blit(texture, (xx, yy))
     pygame.draw.rect(surf, (92, 60, 34), (x, y, w, h), 3)
     for yy in range(y + 3, y + h - 3, 4):
         for xx in range(x + 3, x + w - 3, 7):
@@ -77,7 +88,12 @@ class Button:
             body, top, txt = (128, 118, 106), (138, 126, 112), (92, 84, 74)
         else:
             top, body, txt = (150, 108, 66), (188, 140, 92), (30, 20, 12)
-        pygame.draw.rect(surf, body, self.rect)
+        texture = _chrome("button")
+        if texture:
+            surf.blit(pygame.transform.scale(texture, (self.w, self.h)),
+                      (self.x, self.y))
+        else:
+            pygame.draw.rect(surf, body, self.rect)
         pygame.draw.rect(surf, top, (self.x, self.y, self.w, 5))
         pygame.draw.rect(surf, (60, 38, 24), self.rect, 2)
         tw, th = font.size(self.label)

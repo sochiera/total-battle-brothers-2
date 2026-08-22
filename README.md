@@ -6,12 +6,10 @@ story campaign, or multiplayer. The goal is to outlast every rival ducal line.
 
 ## Requirements and launch
 
-Ubuntu 26.04 (or another Linux with Python 3.10+) and a window-capable pygame
-installation are required. Keep dependencies in the project environment:
+Ubuntu 26.04 (or another Linux with Python 3.10+) is required. `run.sh`
+creates `.venv` and installs pygame-ce and pytest on its first run:
 
 ```sh
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
 ./run.sh
 ```
 
@@ -22,6 +20,13 @@ be supplied with `--seed 734102`; `--new-game` skips the title screen and
 ```sh
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python3 -m tbb \
   --seed 734102 --new-game --frames 45
+```
+
+For a display-free save check, use the rules-only CLI path:
+
+```sh
+.venv/bin/python3 -m tbb --save-smoke plan-smoke
+test -s saves/plan-smoke.tbb
 ```
 
 ## What works
@@ -88,14 +93,28 @@ disabled state. In battle, click a unit then an adjacent hex or hostile unit;
 
 ## Demo data and limitations
 
-Seeds, the default 734102 world, generated names, and procedural painted
-sprites are demo data. Audio is synthesized at runtime and stays silent when
-the machine has no audio device. There is no story campaign, multiplayer,
-networking, or external content pipeline.
+Seeds, the default 734102 world, generated names, and generated settlement
+contents are demo data. Original pixel-art files live in `assets/tiles/`,
+`assets/settlements/`, `assets/banners/`, `assets/units/`, and `assets/ui/`.
+The five shipped sounds live in `assets/audio/`; synthesis is only a fallback,
+and audio stays silent when the machine has no audio device. There is no story
+campaign, multiplayer, networking, editor, or external content pipeline.
+
+Heirs are chosen only in Court. Settlement controls explain disabled build,
+recruit, train, equip, found, develop, and market actions before a click.
+
+What does not work yet is intentionally outside this product: there is no
+story campaign, multiplayer, networking, editor, or external content pipeline.
+Battle auto-resolve is provided as the practical fallback for a player who does
+not want to issue individual unit orders.
 
 ## Summary and test evidence
 
 Rules are in `tbb/rules` and import no pygame; presentation is in `tbb/app`.
-Run `.venv/bin/python3 -m pytest -q` for headless tests and the dummy-video
-command above for the launch smoke check. The checked-in suite covers the
-deterministic rules foundation; the command is the factual verification path.
+Run `.venv/bin/python3 -m pytest -q` for headless tests, the `--save-smoke`
+command above for a real JSON slot, and the dummy-video command above for the
+launch smoke check. The checked-in suite covers movement, economy, AI orders,
+talents, battle writeback, succession, victory/defeat, save/load, and pygame
+isolation. Last verification: 26 tests passed and the 45-frame dummy SDL smoke
+(`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run.sh --seed 734102
+--new-game --frames 45`) completed successfully.

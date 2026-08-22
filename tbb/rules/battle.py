@@ -2,6 +2,32 @@
 from . import constants as C
 from . import terrain as G
 
+BLOCKING_TERRAIN = C.BATTLE_BLOCKING_TERRAIN
+
+
+def generate_field(contact_terrain, rng=None):
+    """Build the shared 14x11 tactical field for every new contact."""
+    field = {}
+    for r in range(C.BATTLE_HEIGHT):
+        for q in range(C.BATTLE_WIDTH):
+            terrain = C.TERRAIN_PLAINS
+            if contact_terrain == C.TERRAIN_FOREST:
+                terrain = (C.TERRAIN_FOREST
+                           if (q // 2 + r // 2) % 3 != 1 else
+                           C.TERRAIN_PLAINS)
+            elif contact_terrain == C.TERRAIN_HILLS:
+                terrain = C.TERRAIN_HILLS if r in (3, 4, 5) else C.TERRAIN_PLAINS
+            elif contact_terrain == C.TERRAIN_RIVER:
+                terrain = C.TERRAIN_RIVER if q in (6, 7) else C.TERRAIN_PLAINS
+            elif contact_terrain == C.TERRAIN_ROAD:
+                terrain = C.TERRAIN_ROAD if r in (5, 6) else C.TERRAIN_PLAINS
+            elif contact_terrain == C.TERRAIN_VILLAGE:
+                terrain = C.TERRAIN_VILLAGE if (q + r) % 5 == 0 else C.TERRAIN_PLAINS
+            elif contact_terrain == C.TERRAIN_RUINS:
+                terrain = C.TERRAIN_RUINS if (q + 2 * r) % 6 in (0, 1) else C.TERRAIN_PLAINS
+            field[(q, r)] = terrain
+    return field
+
 class Result:
     __slots__ = ("ok", "reason", "hit", "damage")
     def __init__(self, ok, reason="", hit=False, damage=0): self.ok,self.reason,self.hit,self.damage=ok,reason,hit,damage
@@ -22,23 +48,27 @@ class Battle:
         terrain = campaign.world.terrain(attacker.hex)
         if terrain == C.TERRAIN_VILLAGE and assault: terrain = C.TERRAIN_VILLAGE
         self.contact_terrain = terrain if terrain in C.CAMPAIGN_TERRAINS else C.TERRAIN_PLAINS
-        self._build_field(); self._place_units()
+        self._build_field()
+        self._place_units()
+
+    @property
+    def center(self):
+        return (C.BATTLE_WIDTH // 2, C.BATTLE_HEIGHT // 2)
+
+    @property
+    def field_center(self):
+        return self.center
 
     def _build_field(self):
-        for r in range(C.BATTLE_HEIGHT):
-            for q in range(C.BATTLE_WIDTH):
-                value = self.contact_terrain
-                if self.contact_terrain == C.TERRAIN_FOREST and (q+r) % 4 == 0: value = C.TERRAIN_FOREST
-                elif self.contact_terrain == C.TERRAIN_HILLS and r in (3,4): value = C.TERRAIN_HILLS
-                elif self.contact_terrain == C.TERRAIN_RIVER and q == C.BATTLE_WIDTH//2: value = C.TERRAIN_RIVER
-                elif self.contact_terrain == C.TERRAIN_ROAD and r in (5,6): value = C.TERRAIN_ROAD
-                self.canvas[(q,r)] = value
+        self.canvas = generate_field(self.contact_terrain, self.campaign.rng)
+        self.field = self.canvas
 
     def _place_units(self):
         for side, ids in self.sides.items():
             columns = range(1, 4) if side == "attacker" else range(C.BATTLE_WIDTH-4, C.BATTLE_WIDTH-1)
+            columns = list(columns)
             for n, uid in enumerate(ids):
-                self.positions[uid] = (list(columns)[n % 3], n // 3 + 1) if side == "attacker" else (list(columns)[n % 3], n // 3 + 1)
+                self.positions[uid] = (columns[n % 3], n // 3 + 1)
 
     def terrain(self, pos): return self.canvas.get(tuple(pos), C.TERRAIN_PLAINS)
     def human_side(self):
@@ -89,7 +119,8 @@ class Battle:
             largest = differences.index(max(differences))
             rounded[largest] = -rounded[(largest + 1) % 3] - rounded[(largest + 2) % 3]
             cells.append((rounded[0], rounded[1]))
-        return not any(self.terrain(p) in (C.TERRAIN_FOREST, C.TERRAIN_HILLS, C.TERRAIN_RIVER) for p in cells)
+        return not any(self.terrain(p) in BLOCKING_TERRAIN
+                       for p in cells)
     def morale_hit_term(self, side):
         realm = self.campaign.realms.get(self.campaign.units[self.sides[side][0]].realm)
         return morale_hit_term(realm.morale if realm else 50)

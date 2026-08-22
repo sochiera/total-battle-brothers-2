@@ -192,7 +192,10 @@ class BattleScreen:
                 continue
             cx, cy = self._hex(pos)
             si = realm_index(b.campaign, unit.realm)
-            sp = unit_art.get((si, unit.kit, unit.is_hero))
+            bandit_side = (b.attacker if b.side_of[uid] == "attacker"
+                           else b.defender)
+            sp = (self.app.art["bandit"] if bandit_side.kind == "bandit"
+                  else unit_art.get((si, unit.kit, unit.is_hero)))
             if sp:
                 surf.blit(sp, (cx - 8, cy - 10))
             if b.side_of[uid] == b.turn_side and b.alive.get(uid) and \
@@ -222,6 +225,3 @@ class BattleScreen:
 
     def _hex(self, pos):
         return hex_center(*pos, self._ox, self._oy)
-
-    def _selected(self):
-        return None

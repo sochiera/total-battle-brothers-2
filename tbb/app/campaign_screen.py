@@ -66,9 +66,6 @@ class CampaignScreen:
         return out
 
     # ------------------------------------------------------------ actions
-    def _sel_size_ok(self):
-        return True
-
     def end_month(self):
         c = self.campaign
         if c.pending_battles:
@@ -177,6 +174,16 @@ class CampaignScreen:
         if not c.world.in_bounds((q, r)):
             return
         hexpos = (q, r)
+        if getattr(self.app, "found_mode", False):
+            res = self.campaign.order_found(hexpos)
+            if res.ok:
+                self.hint = "A village is being seeded there"
+                self.app.found_mode = False
+                self.app.audio.sfx("close")
+            else:
+                self.app.audio.sfx("cant")
+                self.hint = res.reason
+            return
         # march the selected hero company
         if self.selected_pid is not None:
             party = next((p for p in self.campaign.parties
@@ -191,15 +198,6 @@ class CampaignScreen:
                     self.app.audio.sfx("cant")
                     self.hint = res.reason
                 return
-        if getattr(self.app, "found_mode", False):
-            res = self.campaign.order_found(hexpos)
-            if res.ok:
-                self.hint = "A village is being seeded there"
-                self.app.audio.sfx("close")
-            else:
-                self.app.audio.sfx("cant")
-                self.hint = res.reason
-            return
         # pick what stands there
         sid = self.campaign.settlement_id_at(hexpos)
         parties_here = [p for p in self.campaign.parties
@@ -261,6 +259,13 @@ class CampaignScreen:
         c = self.campaign
         sf = self.app.fonts["small"]
         settle_art = self.app.art["settle"]
+        # Holdings are painted first so a raider remains visible and clickable.
+        for h in c.settlements.values():
+            sxx, syy = hex_center(*h.hex, self.ox, self.oy)
+            sector = realm_index(c, h.owner)
+            sp = settle_art[(sector, h.size)]
+            surf.blit(sp, (sxx - sp.get_width() // 2,
+                           syy - sp.get_height() // 2))
         for p in c.parties:
             cx, cy = hex_center(*p.hex, self.ox, self.oy)
             if p.kind == "bandit":
@@ -278,19 +283,14 @@ class CampaignScreen:
                 sp = self.app.art["unit"].get((si, u.kit, u.is_hero))
                 if sp:
                     surf.blit(sp, (cx - 8, cy - 10))
-        # settlements
-        for h in c.settlements.values():
-            sxx, syy = hex_center(*h.hex, self.ox, self.oy)
-            sector = realm_index(c, h.owner)
-            sp = settle_art[(sector, h.size)]
-            surf.blit(sp, (sxx - sp.get_width() // 2,
-                           syy - sp.get_height() // 2))
         # hero banner + company counts
         for p in c.parties:
             if p.kind != "hero":
                 continue
             cx, cy = hex_center(*p.hex, self.ox, self.oy)
-            pygame.draw.circle(surf, (255, 240, 200), (cx, cy - 12), 3)
+            banner = self.app.art["banner"].get(realm_index(c, p.realm))
+            if banner:
+                surf.blit(banner, (cx - banner.get_width() // 2, cy - 26))
             draw_text(surf, sf, "%d" % len(p.unit_ids), cx + 8, cy + 8,
                       (30, 20, 12))
         # reachable moves for the selected hero
@@ -354,8 +354,8 @@ class CampaignScreen:
             y += 20
         if c.ended:
             word = "DEFEAT - the realm is gone" if c.end_reason == \
-                "defeat" else "VICTORY - the last realm endures"
-            draw_text(surf, f["big"], word, x - 20, 220, (150, 20, 14))
+                 "defeat" else "VICTORY - the last realm endures"
+            draw_text(surf, f["big"], word, 24, 120, (150, 20, 14))
 
     @staticmethod
     def _f(v):
