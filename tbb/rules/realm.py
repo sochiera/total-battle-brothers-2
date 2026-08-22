@@ -1,98 +1,38 @@
-"""Realms (duchies): the player plus four AI rivals. Each keeps exactly one
-living hero, a designated heir (or explicitly none), resources, population,
-holdings, units and orders."""
+"""One duchy: resources, population pool, succession and holdings."""
 from . import constants as C
-
 
 class Realm:
     def __init__(self, key, name, is_player=False, color=(0, 0, 0)):
-        self.key = key
-        self.name = name
-        self.is_player = is_player
-        self.color = color
-        self.gold = 0.0
-        self.wheat = 0.0
-        self.population = 0
-        self.hero = None            # unit id
-        self.heir = None            # unit id or None
-        self.unit_ids = set()       # all owned units (anywhere on the map)
-        self.settlement_ids = []    # owned holdings
-        self.orders = []            # list of Order
-        self.morale = 75.0
-        self.drop_notes = []
-        self.destroyed = False
-        # AI scratch (not part of rules semantics)
-        self.ai_target = None
-        self.ai_path = []
-        self.ai_think_timer = 0
+        self.key, self.name, self.is_player, self.color = key, name, is_player, color
+        self.gold = 0.0; self.wheat = 0.0; self.population = 0
+        self.hero = None; self.heir = None
+        self.unit_ids = set(); self.settlement_ids = []; self.orders = []
+        self.morale = float(C.MORALE_START); self.destroyed = False
+        self.drop_notes = []; self.ai_target = None; self.ai_path = []
 
-    # ------------------------------------------------------------------ units
-    def hero_unit(self, units):
-        if self.hero is None:
-            return None
-        return units.get(self.hero)
-
-    def heir_unit(self, units):
-        if self.heir is None:
-            return None
-        return units.get(self.heir)
-
-    def living_units(self, units):
-        return [units[i] for i in sorted(self.unit_ids) if units[i].alive]
-
-    def all_units(self, units):
-        return [units[i] for i in sorted(self.unit_ids)]
-
-    # ------------------------------------------------------------------ state
-    def is_alive(self):
-        return not self.destroyed
-
-    def can_raise_hero(self, settlements):
-        """A town (or bigger) is required to raise a new commander."""
-        return any(s.size != "village" for s in self.holdings(settlements))
-
-    def holdings(self, settlements):
-        return [settlements[sid] for sid in self.settlement_ids
-                if sid in settlements]
-
-    def holdings_cap(self, settlements):
-        return sum(s.pop_cap() for s in self.holdings(settlements))
-
-    def gold_income(self, settlements):
-        return sum(s.gold_produced() for s in self.holdings(settlements))
-
-    def food_income(self, settlements):
-        return sum(s.food_produced() for s in self.holdings(settlements))
-
-    def building_upkeep(self, settlements):
-        return sum(s.upkeep() for s in self.holdings(settlements))
-
-    def staff_total(self, settlements):
-        return sum(s.staff_needed() for s in self.holdings(settlements))
-
-    def training_slots(self, settlements):
-        return sum(s.training_slots() for s in self.holdings(settlements))
-
+    def hero_unit(self, units): return units.get(self.hero) if self.hero is not None else None
+    def heir_unit(self, units): return units.get(self.heir) if self.heir is not None else None
+    def living_units(self, units): return [units[i] for i in sorted(self.unit_ids)
+                                             if i in units and units[i].alive]
+    def all_units(self, units): return [units[i] for i in sorted(self.unit_ids) if i in units]
+    def holdings(self, settlements): return [settlements[i] for i in self.settlement_ids if i in settlements]
+    def holdings_cap(self, settlements): return sum(h.pop_cap() for h in self.holdings(settlements))
+    def can_raise_hero(self, settlements): return any(h.size in (C.SIZE_T, C.SIZE_C) for h in self.holdings(settlements))
+    def building_upkeep(self, settlements): return sum(h.upkeep() for h in self.holdings(settlements))
+    def staff_total(self, settlements): return sum(h.staff_needed() for h in self.holdings(settlements))
+    def training_slots(self, settlements): return sum(h.training_slots() for h in self.holdings(settlements))
     def supplies(self, settlements):
-        """Set of kit-building capabilities the realm currently provides."""
-        can = set()
-        for s in self.holdings(settlements):
-            can |= s.supplies()
-        return can
-
-    def morale_from_holdings(self, settlements):
-        return sum(s.morale_effect() for s in self.holdings(settlements))
-
-    def add_note(self, text):
-        self.drop_notes.append(text)
-
+        return {kind for h in self.holdings(settlements) for kind in h.supplies()}
+    def morale_from_holdings(self, settlements): return sum(h.morale_effect() for h in self.holdings(settlements))
+    def food_income(self, settlements):
+        share = max(1, self.population // max(1, len(self.settlement_ids)))
+        return sum(h.food_produced(share) for h in self.holdings(settlements))
+    def gold_income(self, settlements): return 0
+    def staffed(self, settlements, kind): return any(h.has(kind) for h in self.holdings(settlements))
     def snapshot(self):
-        return {
-            "key": self.key, "name": self.name, "is_player": self.is_player,
-            "gold": self.gold, "wheat": self.wheat,
-            "population": self.population, "hero": self.hero,
-            "heir": self.heir,
-            "unit_ids": sorted(self.unit_ids),
-            "settlement_ids": list(self.settlement_ids),
-            "morale": self.morale, "destroyed": self.destroyed,
-        }
+        return {"key": self.key, "name": self.name, "is_player": self.is_player,
+                "color": self.color, "gold": self.gold, "wheat": self.wheat,
+                "population": self.population, "hero": self.hero, "heir": self.heir,
+                "unit_ids": sorted(self.unit_ids), "settlement_ids": list(self.settlement_ids),
+                "orders": [o.snapshot() for o in self.orders], "morale": self.morale,
+                "destroyed": self.destroyed}

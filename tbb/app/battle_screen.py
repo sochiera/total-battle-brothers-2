@@ -36,7 +36,9 @@ class BattleScreen:
     # ------------------------------------------------------------ actions
     def _do(self, res):
         if res and res.ok:
-            if "slain" in (res.reason or "") or "wound" in (res.reason or ""):
+            if "slain" in (res.reason or ""):
+                self.app.audio.sfx("death")
+            elif "wound" in (res.reason or ""):
                 self.app.audio.sfx("pain")
             else:
                 self.app.audio.sfx("hit")
@@ -196,7 +198,7 @@ class BattleScreen:
             if b.side_of[uid] == b.turn_side and b.alive.get(uid) and \
                     b.campaign.units[uid].realm == b.campaign.player.key:
                 pass
-            draw_text(surf, f["small"], "%d" % unit.id, cx + 8, cy - 4,
+            draw_text(surf, f["small"], "%s  AP%d HP%d/%d" % (unit.name[:14], b.ap.get(uid, 0), unit.current_hit_points, unit.max_hit_points), cx + 8, cy - 4,
                       (30, 20, 12))
         draw_panel(surf, 0, SCREEN_H - 90, SCREEN_W, 90)
         draw_text(surf, f["small"], "Your turn - click a warrior, then a new "

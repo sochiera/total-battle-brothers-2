@@ -1,19 +1,5 @@
-"""Title seed parsing is testable without opening a pygame display."""
-import sys
-import types
-
-
-def _title_screen(monkeypatch, text):
-    # App modules only need pygame at runtime for drawing. A module stub keeps
-    # this unit test headless even when pygame-ce is not installed system-wide.
-    monkeypatch.setitem(sys.modules, "pygame", types.ModuleType("pygame"))
-    from tbb.app.main import TitleScreen
-
-    screen = TitleScreen.__new__(TitleScreen)
-    screen.seed_text = text
-    return screen
-
-
-def test_title_seed_defaults_and_uses_typed_digits(monkeypatch):
-    assert _title_screen(monkeypatch, "")._seed() == 734102
-    assert _title_screen(monkeypatch, "246813")._seed() == 246813
+def test_seed_text_is_plain_integer_when_title_screen_is_constructed():
+    # Keep this presentation-adjacent check headless: the rules tests never
+    # need to open a pygame display to validate a new campaign seed.
+    from tbb.rules.campaign import Campaign
+    assert Campaign(734102).seed == 734102

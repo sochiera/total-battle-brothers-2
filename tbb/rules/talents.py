@@ -1,67 +1,39 @@
-"""Talents: rolled per warrior, gate which stat gains are kept when training
-or fighting. They grant no flat bonuses.
-
-Every gain hands out GAIN_POINTS_PER_GAIN points. A conditioning share always
-goes to one universal stat (training -> fatigue, combat XP -> resolve) because
-marching hardens the body and war hardens nerve. Every other point goes only
-to stats named by the warrior's talent set, so a bow-gifted scout never
-improves melee no matter how long he drills.
-"""
-from . import constants
-
-
-def STATS_ORDER():
-    return list(constants.STATS)
-
-
-def diminish(raw, seasoning):
-    return max(1, int(round(raw / (1.0 + seasoning * constants.DIMINISH_FACTOR))))
-
-
-def pooled_stats(talents):
-    """Union of stat names gifted by the given talent set."""
-    out = []
-    for t in talents:
-        for s in constants.TALENT_STATS[t]:
-            if s not in out:
-                out.append(s)
-    return out
-
+"""Talent rolls and affinity-only growth."""
+from . import constants as C
 
 def roll_talents(rng):
-    """Sample NUM_TALENTS without replacement from the locked pool."""
-    return rng.sample_no_repeat(constants.TALENT_POOL, constants.NUM_TALENTS)
+    return rng.sample(list(C.TALENT_POOL), C.NUM_TALENTS)
 
+def diminish(raw, seasoning):
+    return max(1, int(round(raw / (1.0 + seasoning * C.DIMINISH_FACTOR))))
 
-def _allocate(rng, total, talents, cond_stat, cond_share):
-    alloc = {s: 0 for s in STATS_ORDER()}
-    if cond_share > 0 and total > 0:
-        alloc[cond_stat] = min(total, cond_share)
-        total -= alloc[cond_stat]
-    stats = pooled_stats(talents)
-    if not stats or total <= 0:
-        return alloc
-    per, rem = divmod(total, len(stats))
-    for s in stats:
-        alloc[s] += per
-    for _ in range(rem):
-        alloc[rng.choice(stats)] += 1
-    return alloc
+def _weights(talents, focus=None):
+    weights = {key: 0 for key in C.STATS}
+    for talent in talents:
+        for stat in C.TALENT_STATS.get(talent, ()):
+            weights[stat] += 2 if stat == focus else 1
+    return weights
 
+def _allocate(rng, talents, total, conditioning, focus=None):
+    weights = _weights(talents, focus)
+    result = {key: 0 for key in C.STATS}
+    result[conditioning] = 1
+    remaining = max(0, total - 1)
+    gates = {
+        C.BUILDING_DRILL_YARD: {"melee", "fatigue"},
+        C.BUILDING_SMITHY: {"melee", "hit_points"},
+        C.BUILDING_FLETCHER: {"ranged"},
+        C.BUILDING_STABLES: {"fatigue"},
+    }
+    allowed = gates.get(focus)
+    candidates = [key for key, weight in weights.items() if weight and (allowed is None or key in allowed)]
+    if candidates:
+        for _ in range(remaining):
+            result[rng.choice(candidates)] += 1
+    return {key: value for key, value in result.items() if value}
 
-def training_alloc(rng, talents, total=None):
-    """Points kept from a completed training order (whole months)."""
-    if total is None:
-        total = constants.GAIN_POINTS_PER_GAIN
-    return _allocate(rng, total, talents,
-                     constants.TRAIN_CONDITIONING_STAT,
-                     constants.TRAIN_CONDITIONING_SHARE)
+def training_alloc(rng, talents, total, focus=None):
+    return _allocate(rng, talents, total, C.TRAIN_CONDITIONING_STAT, focus)
 
-
-def combat_alloc(rng, talents, total=None):
-    """Points kept from a band of experience from fighting."""
-    if total is None:
-        total = constants.GAIN_POINTS_PER_GAIN
-    return _allocate(rng, total, talents,
-                     constants.XP_CONDITIONING_STAT,
-                     constants.XP_CONDITIONING_SHARE)
+def combat_alloc(rng, talents, total):
+    return _allocate(rng, talents, total, C.XP_CONDITIONING_STAT)

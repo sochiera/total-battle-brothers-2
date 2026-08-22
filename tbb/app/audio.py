@@ -29,6 +29,7 @@ class AudioEngine:
             self.sounds["hit"] = pygame.mixer.Sound(buffer=self._hit())
             self.sounds["bow"] = pygame.mixer.Sound(buffer=self._bow())
             self.sounds["pain"] = pygame.mixer.Sound(buffer=self._pain())
+            self.sounds["death"] = pygame.mixer.Sound(buffer=self._death())
             self.sounds["cant"] = pygame.mixer.Sound(buffer=self._click(180))
         except Exception:
             pass
@@ -89,6 +90,19 @@ class AudioEngine:
             b = math.sin(2 * math.pi * (205 - 45 * (t / 0.5)) * t)
             v = (a + b) * math.exp(-3.2 * t) * 0.22
             out.append(v * 32767)
+        return self._pcm(out)
+
+    def _death(self):
+        """A short descending death cry, intentionally synthetic and quiet."""
+        rate = 22050
+        n = int(rate * 0.72)
+        out = []
+        for i in range(n):
+            t = i / rate
+            fall = 260 - 180 * (t / 0.72)
+            voice = math.sin(2 * math.pi * fall * t)
+            overtone = math.sin(2 * math.pi * fall * 1.51 * t) * 0.35
+            out.append((voice + overtone) * math.exp(-2.8 * t) * 0.20 * 32767)
         return self._pcm(out)
 
     def _ambient_loop(self):

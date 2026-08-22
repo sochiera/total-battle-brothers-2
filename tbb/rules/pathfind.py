@@ -5,11 +5,7 @@ from . import terrain as G
 
 
 def move_cost(world, pos, from_pos=None):
-    terr = world.terrain(pos)
-    cost = C.MOVE_COST[terr]
-    if cost is None:
-        return None
-    return cost
+    return G.move_cost(world.terrain(pos), world.crossing(pos))
 
 
 def a_star(world, start, goal, max_cost=None):

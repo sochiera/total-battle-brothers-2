@@ -93,4 +93,4 @@ class Button:
 def realm_index(campaign, realm_key):
     if realm_key is None:
         return 5
-    return realm_key if realm_key in (0, 1, 2, 3, 4) else 5
+    return realm_key if realm_key in (0, 1, 2, 3, 4, 5) else 5

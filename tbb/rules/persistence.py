@@ -1,77 +1,28 @@
-"""Named-slot save / load layer on top of the JSON GameState schema.
-
-Serialised files are human-readable JSON (`GameState`), so they
-are inspectable, portable between machines/versions, and carry no arbitrary
-code. `canonical` produces a deterministically-ordered summary used by the
-headless roundtrip test.
-"""
-import json
-import os
-import re
-
+"""Named save slots around the versioned rules JSON."""
+import json, os, re
 from . import constants as C
 from .save import to_state_dict, from_state_dict
 
-SAVE_DIR = C.SAVE_DIR
-
-
-def _directory(save_dir=None):
-    return SAVE_DIR if save_dir is None else os.fspath(save_dir)
-
-
+def _directory(save_dir=None): return os.fspath(save_dir) if save_dir is not None else C.SAVE_DIR
 def _slot_name(slot):
-    slot = os.fspath(slot)
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,48}", slot):
-        raise ValueError("slot names use 1-48 letters, digits, '_' or '-'")
+    slot=os.fspath(slot)
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,48}",slot): raise ValueError("slot names use 1-48 letters, digits, '_' or '-'")
     return slot
-
-
-def save_path(slot, save_dir=None):
-    return os.path.join(_directory(save_dir), "%s%s" % (_slot_name(slot), C.SAVE_EXT))
-
-
-def save(campaign, slot, save_dir=None):
-    """Serialize the live campaign into the slot as JSON."""
-    directory = _directory(save_dir)
-    os.makedirs(directory, exist_ok=True)
-    path = save_path(slot, directory)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(to_state_dict(campaign), fh, sort_keys=True,
-                  separators=(",", ":"))
-        fh.write("\n")
+def save_path(slot,save_dir=None): return os.path.join(_directory(save_dir),_slot_name(slot)+C.SAVE_EXT)
+def save(campaign,slot,save_dir=None):
+    os.makedirs(_directory(save_dir),exist_ok=True); path=save_path(slot,save_dir)
+    with open(path,"w",encoding="utf-8") as f: json.dump(to_state_dict(campaign),f,sort_keys=True,separators=(",",":")); f.write("\n")
     return path
-
-
-def load(slot, save_dir=None):
-    path = save_path(slot, save_dir)
-    if not os.path.exists(path):
-        return None
+def load(slot,save_dir=None):
+    path=save_path(slot,save_dir)
+    if not os.path.exists(path): return None
     try:
-        with open(path, encoding="utf-8") as fh:
-            state = json.load(fh)
-        return from_state_dict(state)
-    except (OSError, ValueError, TypeError, KeyError, IndexError,
-            AttributeError, UnicodeError) as exc:
-        raise ValueError("could not load slot '%s': %s" % (slot, exc)) from exc
-
-
-def delete(slot, save_dir=None):
-    path = save_path(slot, save_dir)
-    if os.path.exists(path):
-        os.remove(path)
-
-
-def canonical(campaign):
-    """Deterministically-sorted JSON string over the game-state summary."""
-    state = to_state_dict(campaign)
-    return json.dumps(state, sort_keys=True, default=str)
-
-
+        with open(path,encoding="utf-8") as f: return from_state_dict(json.load(f))
+    except (OSError,ValueError,TypeError,KeyError,IndexError,UnicodeError) as exc: raise ValueError(f"could not load slot '{slot}': {exc}") from exc
+def delete(slot,save_dir=None):
+    path=save_path(slot,save_dir)
+    if os.path.exists(path): os.remove(path)
 def list_slots(save_dir=None):
-    out = []
-    directory = _directory(save_dir)
-    if os.path.isdir(directory):
-        for fn in sorted(os.listdir(directory)):
-            if fn.endswith(C.SAVE_EXT):
-                out.append(fn[: -len(C.SAVE_EXT)])
-    return out
+    directory=_directory(save_dir)
+    return sorted(fn[:-len(C.SAVE_EXT)] for fn in os.listdir(directory) if fn.endswith(C.SAVE_EXT)) if os.path.isdir(directory) else []
+def canonical(campaign): return json.dumps(to_state_dict(campaign),sort_keys=True,default=str)

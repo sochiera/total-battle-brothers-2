@@ -38,7 +38,7 @@ class CampaignScreen:
         t = self.app.art["terrain"]
         for (q, r), terr in cmap.world.grid.items():
             cx, cy = hex_center(q, r, ts=TS)
-            img = t[terr]
+            img = t.get((terr, cmap.world.crossing((q, r))), t[terr])
             surf.blit(img, (cx - img.get_width() // 2,
                             cy - img.get_height() // 2))
         self.map_surf = surf
@@ -54,6 +54,7 @@ class CampaignScreen:
             ("Auto-resolve (A)", self.auto_resolve, pending),
             ("End Month (M)", self.end_month, True),
             ("Open Settlement (O)", self.open_selected, True),
+            ("Court (C)", self.app.enter_court, True),
             ("Found a Village (F)", self.toggle_found, True),
             ("Save (S)", lambda: self.app.enter_save(True), True),
             ("Load (L)", lambda: self.app.enter_save(False), True),
@@ -137,6 +138,8 @@ class CampaignScreen:
                 self.end_month()
             elif k == pygame.K_o:
                 self.open_selected()
+            elif k == pygame.K_c:
+                self.app.enter_court()
             elif k == pygame.K_s:
                 self.app.enter_save(True)
             elif k == pygame.K_l:
@@ -328,7 +331,7 @@ class CampaignScreen:
                           "Garrison %d/%d  Field %d/%d" % (
                               len(gp.unit_ids) if gp else 0,
                               h.garrison_cap(), len(hp.unit_ids) if hp else 0,
-                              1 + C.COMPANY_CAP), x, 148, (70, 50, 30))
+                              C.COMPANY_CAP), x, 148, (70, 50, 30))
         if self.hint:
             draw_text(surf, f["small"], self.hint[:46], x, 430, (90, 40, 30))
         draw_text(surf, f["small"], "Robber bands:", x, 462, (90, 35, 24))
@@ -341,6 +344,11 @@ class CampaignScreen:
             draw_text(surf, f["small"], label[:42], x, y, (100, 35, 25))
             y += 19
         y = max(y + 8, 560)
+        draw_text(surf, f["small"], "Company roster:", x, y, (70, 45, 28)); y += 20
+        party = c.hero_party(pl.key)
+        for unit in (c.living_in_party(party) if party else [])[:8]:
+            draw_text(surf, f["small"], f"{unit.name}  {unit.kit}", x, y, (70, 50, 35)); y += 18
+        y += 8
         for note in c.notes[-6:][::-1]:
             draw_text(surf, f["small"], note[:48], x, y, (90, 74, 52))
             y += 20

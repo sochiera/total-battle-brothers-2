@@ -13,6 +13,7 @@ from tbb.app.campaign_screen import CampaignScreen
 from tbb.app.settlement_screen import SettlementScreen
 from tbb.app.battle_screen import BattleScreen
 from tbb.app.save_screen import SaveScreen
+from tbb.app.court_screen import CourtScreen
 from tbb.app.ui import draw_text, Button, SCREEN_W, SCREEN_H
 
 
@@ -130,6 +131,7 @@ class App:
         self.settlement_screen = SettlementScreen(self)
         self.battle_screen = BattleScreen(self)
         self.save_screen = SaveScreen(self)
+        self.court_screen = CourtScreen(self)
         self.audio.music_start()
 
     # ------------------------------------------------------------- flow
@@ -153,6 +155,11 @@ class App:
         self.save_screen.refresh()
         self.save_screen.mode = "save" if is_save else "load"
         self.mode = "savegame"
+        self.audio.sfx("click")
+
+    def enter_court(self):
+        self.court_screen.load(self.campaign)
+        self.mode = "court"
         self.audio.sfx("click")
 
     def start_battle(self, battle):
@@ -194,6 +201,8 @@ class App:
             self.settlement_screen.handle(ev)
         elif self.mode == "battle":
             self.battle_screen.handle(ev)
+        elif self.mode == "court":
+            self.court_screen.handle(ev)
 
     def _draw(self):
         if self.mode == "title":
@@ -206,6 +215,8 @@ class App:
             self.settlement_screen.draw(self.display)
         elif self.mode == "battle":
             self.battle_screen.draw(self.display)
+        elif self.mode == "court":
+            self.court_screen.draw(self.display)
 
 
 if __name__ == "__main__":

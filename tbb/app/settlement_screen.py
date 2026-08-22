@@ -1,34 +1,39 @@
-"""Settlement screen: inspect buildings, staff, population, queues for
-training/gear, recruit, develop, found (site chosen on the map), close
-buildings - with disabled/illegal actions explained."""
+"""Readable settlement actions with dry-run reasons.
+
+The rules package remains the authority for legality.  This screen mirrors
+those checks before a click so a disabled button explains the missing supply,
+worker, building, or location in one short line.
+"""
 import pygame
 
 from tbb.rules import constants as C
 from tbb.app.ui import draw_panel, draw_text, Button, SCREEN_W, SCREEN_H
 
 
-def _f(v):
-    return str(int(round(v))) if isinstance(v, float) else str(v)
+def _f(value):
+    return str(int(round(value))) if isinstance(value, float) else str(value)
 
 
 class SettlementScreen:
+    HUMAN_BUILDINGS = {
+        "farm": "Farm", "granary": "Granary", "market": "Market",
+        "militia_hall": "Militia Hall", "drill_yard": "Drill Yard",
+        "smithy": "Smithy", "fletcher": "Fletcher", "stables": "Stables",
+        "palisade_walls": "Palisade / Walls", "keep": "Keep",
+    }
+
     def __init__(self, app):
         self.app = app
         self.campaign = None
         self.sid = None
         self.hint = ""
-        self._buttons = []
         self.unit_page = 0
-        self.heir_page = 0
 
     def load(self, campaign, sid):
-        self.campaign = campaign
-        self.sid = sid
+        self.campaign, self.sid = campaign, sid
         self.hint = ""
         self.unit_page = 0
-        self.heir_page = 0
 
-    # ------------------------------------------------------------------
     def _holding(self):
         return self.campaign.settlements[self.sid]
 
@@ -36,102 +41,243 @@ class SettlementScreen:
         return self.campaign._realm_of_settlement(self.sid)
 
     def _nextsize(self):
-        h = self._holding()
-        try:
-            i = C.SIZE_ORDER.index(h.size)
-        except ValueError:
-            return None
-        return C.SIZE_ORDER[i + 1] if i + 1 < len(C.SIZE_ORDER) else None
-
-# ------------------------------------------------------------ buttons
-    HUMAN_BUILDINGS = {
-        "farm": "Farm", "granary": "Granary", "market": "Market",
-        "militia_hall": "Militia Hall", "training_yard": "Training Yard",
-        "smithy": "Smithy", "bowyer": "Bowyer", "walls": "Walls",
-        "keep": "Keep", "chapel": "Chapel",
-    }
+        index = C.SIZE_ORDER.index(self._holding().size)
+        return C.SIZE_ORDER[index + 1] if index + 1 < len(C.SIZE_ORDER) else None
 
     def _bname(self, kind):
         return self.HUMAN_BUILDINGS.get(kind, kind.replace("_", " ").title())
 
-    def _build_buttons(self):
-        h = self._holding()
+    @staticmethod
+    def _with_reason(label, reason):
+        return label if reason is None else "%s — %s" % (label, reason)
+
+    # Dry-run validators are deliberately side-effect free; they are also
+    # useful to tests and keep the UI's disabled state honest.
+    def _build_reason(self, kind):
+        realm, holding = self._realm(), self._holding()
+        if realm is None or realm.key != self.campaign.player.key:
+            return "not your holding"
+        if kind in holding.buildings:
+            return "already built"
+        if holding.building_slots_free() <= 0:
+            return "no building slots"
+        if any(o.kind == "build" and o.settlement_id == self.sid
+               for o in realm.orders):
+            return "a building is already in progress"
+        spec = C.BUILDINGS[kind]
+        if spec["req"] and holding.size_index() < C.SIZE_ORDER.index(spec["req"]):
+            return "requires a %s" % spec["req"]
+        if realm.gold < spec["gold"]:
+            return "need %dg gold" % spec["gold"]
+        if realm.wheat < spec["wheat"]:
+            return "need %dw wheat" % spec["wheat"]
+        return None
+
+    def _recruit_reason(self, field=False):
+        realm, holding = self._realm(), self._holding()
+        cost = C.RECRUIT_COST
+        if realm.gold < cost["gold"]:
+            return "need %dg gold" % cost["gold"]
+        if realm.wheat < cost["wheat"]:
+            return "need %dw wheat" % cost["wheat"]
+        if not self.campaign._can_spend_population(realm, cost["population"]):
+            return "one idle resident must remain"
+        if field:
+            party = self.campaign.hero_party(realm.key)
+            if not party or party.hex != holding.hex:
+                return "hero company is not here"
+            queued = sum(1 for o in realm.orders
+                         if o.kind == "recruit" and o.kind_data == "field")
+            if len(party.unit_ids) + queued >= C.COMPANY_CAP:
+                return "company cap is 12"
+        else:
+            party = self.campaign.garrison_party(self.sid)
+            queued = sum(1 for o in realm.orders
+                         if o.kind == "recruit" and o.kind_data == "garrison"
+                         and o.settlement_id == self.sid)
+            if not party or len(party.unit_ids) + queued >= holding.garrison_cap():
+                return "garrison is full"
+        return None
+
+    def _train_reason(self, uid):
         realm = self._realm()
+        unit = self.campaign.units.get(uid)
+        if unit is None or not unit.alive:
+            return "warrior is dead"
+        party = self.campaign.hero_party(realm.key)
+        if not party or uid not in party.unit_ids:
+            return "only the field company trains here"
+        if sum(1 for o in realm.orders if o.kind == "train") >= \
+                realm.training_slots(self.campaign.settlements):
+            return "all training slots are occupied"
+        focus = self._training_focus()
+        if focus is None:
+            return "build and staff a Drill Yard, Smithy, Fletcher, or Stables"
+        if any(o.kind == "train" and o.unit_id == uid for o in realm.orders):
+            return "already training"
+        return None
+
+    def _training_focus(self):
+        realm = self._realm()
+        for kind in (C.BUILDING_DRILL_YARD, C.BUILDING_SMITHY,
+                     C.BUILDING_FLETCHER, C.BUILDING_STABLES):
+            if realm.staffed(self.campaign.settlements, kind):
+                return kind
+        return None
+
+    def _preferred_kit(self, unit):
+        realm = self._realm()
+        if unit.stat("ranged") >= unit.stat("melee"):
+            return "bow"
+        if realm.staffed(self.campaign.settlements, C.BUILDING_SMITHY):
+            return "two_hander" if unit.stat("melee") >= 42 else "heavy"
+        return "light"
+
+    def _gear_reason(self, uid, kit):
+        realm = self._realm()
+        unit = self.campaign.units.get(uid)
+        if unit is None or not unit.alive:
+            return "warrior is dead"
+        party = self.campaign.hero_party(realm.key)
+        if not party or uid not in party.unit_ids:
+            return "only the field company can be equipped"
+        if any(o.kind == "gear" and o.unit_id == uid for o in realm.orders):
+            return "equipment order already in progress"
+        spec = C.KITS[kit]
+        if spec["need"] and not realm.staffed(self.campaign.settlements, spec["need"]):
+            return "requires a staffed %s" % spec["need"]
+        if realm.gold < spec["gold"]:
+            return "need %dg gold" % spec["gold"]
+        if realm.wheat < spec["wheat"]:
+            return "need %dw wheat" % spec["wheat"]
+        return None
+
+    def _develop_reason(self):
+        realm, holding = self._realm(), self._holding()
+        target = self._nextsize()
+        if target is None:
+            return "a City cannot develop further"
+        if any(o.kind == "develop" and o.settlement_id == self.sid
+               for o in realm.orders):
+            return "development is already in progress"
+        cost = C.DEVELOP_COST[(holding.size, target)]
+        if realm.gold < cost["gold"]:
+            return "need %dg gold" % cost["gold"]
+        if realm.wheat < cost["wheat"]:
+            return "need %dw wheat" % cost["wheat"]
+        return None
+
+    def _found_reason(self):
+        realm = self._realm()
+        if realm.gold < C.FOUND_COST["gold"]:
+            return "need %dg gold" % C.FOUND_COST["gold"]
+        if realm.wheat < C.FOUND_COST["wheat"]:
+            return "need %dw wheat" % C.FOUND_COST["wheat"]
+        if not self.campaign._can_spend_population(realm, C.FOUND_COST["settlers"]):
+            return "need settlers while keeping workers"
+        valid = any(self.campaign.world.in_bounds(pos) and
+                    self.campaign.settlement_at(pos) is None and
+                    self.campaign.world.terrain(pos) in
+                    (C.TERRAIN_PLAINS, C.TERRAIN_RUINS) and
+                    any(pos in self.campaign.world.neighbours(
+                        self.campaign.settlements[s].hex)
+                        for s in realm.settlement_ids)
+                    for row in range(self.campaign.height)
+                    for pos in [(column, row)
+                                for column in range(self.campaign.width)])
+        return None if valid else "no adjacent empty plains or ruins"
+
+    def _market_reason(self, direction):
+        realm, holding = self._realm(), self._holding()
+        if not holding.has(C.BUILDING_MARKET):
+            return "build and staff a Market"
+        if direction == "sell" and realm.wheat < C.MARKET_SELL_WHEAT:
+            return "need %dw wheat" % C.MARKET_SELL_WHEAT
+        if direction == "buy" and realm.gold < C.MARKET_BUY_GOLD:
+            return "need %dg gold" % C.MARKET_BUY_GOLD
+        return None
+
+    def _staff_reason(self, kind):
+        realm = self._realm()
+        if self._holding().buildings[kind].staffed:
+            return None
+        return None if self.campaign._can_spend_population(realm) else \
+            "one idle resident must remain"
+
+    def _build_buttons(self):
+        holding, realm = self._holding(), self._realm()
         out = []
-        # Buildings occupy the upper two columns; the right side is reserved
-        # for orders and succession so no control is hidden at 1280x800.
-        for i, kind in enumerate(C.BUILDING_ROSTER):
-            spec = C.BUILDINGS[kind]
-            b = h.buildings.get(kind)
-            xx = 16 if i < 5 else 356
-            yy = 150 + (i % 5) * 34
-            if b is not None:
-                if b.staffed:
-                    out.append(Button(xx, yy, 145, 28,
-                                      "Unstaff %s" % self._bname(kind),
-                                      lambda k=kind: self.do_unstaff(k)))
-                else:
-                    out.append(Button(xx, yy, 145, 28,
-                                      "Staff %s" % self._bname(kind),
-                                      lambda k=kind: self.do_staff(k)))
-                out.append(Button(xx + 155, yy, 145, 28,
-                                  "Close %s" % self._bname(kind),
+        for index, kind in enumerate(C.BUILDING_ROSTER):
+            spec, building = C.BUILDINGS[kind], holding.buildings.get(kind)
+            x, y = (16 if index < 5 else 356), 150 + (index % 5) * 34
+            if building is not None:
+                staff_reason = self._staff_reason(kind)
+                was_staffed = building.staffed
+                staff_label = ("Unstaff " if building.staffed else "Staff ") + self._bname(kind)
+                out.append(Button(x, y, 145, 28, staff_label,
+                                  lambda k=kind, staffed=was_staffed:
+                                  self.do_unstaff(k) if staffed else self.do_staff(k),
+                                  enabled=building.staffed or staff_reason is None))
+                out.append(Button(x + 155, y, 145, 28,
+                                  "Close " + self._bname(kind),
                                   lambda k=kind: self.do_close(k)))
             else:
-                label = "Build %s (%dg %dm)" % (self._bname(kind),
-                                                 spec["gold"],
-                                                 spec["months"])
-                out.append(Button(xx, yy, 300, 28, label,
-                                  (lambda k=kind: self.do_build(k)),
-                                  enabled=self._can_build(kind)))
-        y = 320
-        out.append(Button(16, y, 320, 28, "Recruit garrison (10g, 1w, folk)",
-                          self.do_recruit_g))
-        out.append(Button(356, y, 320, 28, "Recruit company (hero here)",
-                          self.do_recruit_c))
-        y += 36
-        if self._nextsize():
-            nxt = self._nextsize()
-            out.append(Button(16, y, 320, 28, "Develop to %s" % nxt.title(),
-                              self.do_develop))
-        out.append(Button(356, y, 320, 28, "Found a village (map)",
-                          self.do_found))
-        y = 450
-        hp = self.campaign.hero_party(realm.key)
-        field_ids = hp.unit_ids if hp else []
-        train_max = self.campaign.player.training_slots(self.campaign.settlements)
-        train_used = sum(1 for o in realm.orders if o.kind == "train")
+                reason = self._build_reason(kind)
+                label = "Build %s (%dg/%dw, %dm)" % (self._bname(kind),
+                                                     spec["gold"], spec["wheat"], spec["months"])
+                out.append(Button(x, y, 300, 28,
+                                  self._with_reason(label, reason),
+                                  lambda k=kind: self.do_build(k), enabled=reason is None))
+
+        recruit_y = 320
+        for x, field, label in ((16, False, "Recruit garrison"),
+                                (356, True, "Recruit company")):
+            reason = self._recruit_reason(field)
+            out.append(Button(x, recruit_y, 320, 28,
+                              self._with_reason(label + " (10g, 2w, 1 month)", reason),
+                              self.do_recruit_c if field else self.do_recruit_g,
+                              enabled=reason is None))
+        target = self._nextsize()
+        develop_reason = self._develop_reason() if target else "a City cannot develop further"
+        out.append(Button(16, 356, 320, 28,
+                          self._with_reason("Develop to %s" % (target or "City"), develop_reason),
+                          self.do_develop, enabled=develop_reason is None))
+        found_reason = self._found_reason()
+        out.append(Button(356, 356, 320, 28,
+                          self._with_reason("Found a village (map)", found_reason),
+                          self.do_found, enabled=found_reason is None))
+        sell_reason, buy_reason = self._market_reason("sell"), self._market_reason("buy")
+        out.append(Button(16, 392, 320, 28,
+                          self._with_reason("Sell %d wheat -> %d gold" %
+                                             (C.MARKET_SELL_WHEAT, C.MARKET_SELL_GOLD), sell_reason),
+                          self.do_sell, enabled=sell_reason is None))
+        out.append(Button(356, 392, 320, 28,
+                          self._with_reason("Buy %d wheat <- %d gold" %
+                                             (C.MARKET_BUY_WHEAT, C.MARKET_BUY_GOLD), buy_reason),
+                          self.do_buy, enabled=buy_reason is None))
+
+        party = self.campaign.hero_party(realm.key)
+        ids = list(party.unit_ids) if party else []
         start = self.unit_page * 6
-        page_ids = field_ids[start:start + 6]
-        for uid in page_ids:
-            u = self.campaign.units.get(uid)
-            if u is None or not u.alive:
+        for index, uid in enumerate(ids[start:start + 6]):
+            unit = self.campaign.units.get(uid)
+            if unit is None or not unit.alive:
                 continue
-            if train_used < train_max:
-                out.append(Button(16, y, 190, 26, "Drill %s" % u.name,
-                                  lambda i=uid: self.do_train(i),
-                                  enabled=self._can_train(uid)))
-            kit = self._best_gear(u)
-            if kit:
-                out.append(Button(210, y, 210, 26,
-                                  "Equip %s" % C.KITS[kit]["name"],
-                                  lambda i=uid, k=kit: self.do_gear(i, k)))
-            y += 30
+            y = 450 + index * 30
+            train_reason = self._train_reason(uid)
+            out.append(Button(16, y, 300, 26,
+                              self._with_reason("Train " + unit.name, train_reason),
+                              lambda i=uid: self.do_train(i), enabled=train_reason is None))
+            kit = self._preferred_kit(unit)
+            gear_reason = self._gear_reason(uid, kit)
+            out.append(Button(326, y, 340, 26,
+                              self._with_reason("Equip %s: %s" % (unit.name, C.KITS[kit]["name"]), gear_reason),
+                              lambda i=uid, k=kit: self.do_gear(i, k), enabled=gear_reason is None))
         if self.unit_page > 0:
-            out.append(Button(16, 650, 180, 28, "Previous warriors",
-                              self.previous_page))
-        if start + 6 < len(field_ids):
-            out.append(Button(210, 650, 210, 28, "More warriors",
-                              self.next_page))
+            out.append(Button(16, 650, 180, 28, "Previous warriors", self.previous_page))
+        if start + 6 < len(ids):
+            out.append(Button(210, 650, 180, 28, "More warriors", self.next_page))
         out.append(Button(16, 690, 320, 28, "Back to map", self.do_back))
-        all_heirs = realm.living_units(self.campaign.units)
-        heir_start = self.heir_page * 8
-        if self.heir_page > 0:
-            out.append(Button(700, 650, 180, 28, "Previous heirs",
-                              self.previous_heir_page))
-        if heir_start + 8 < len(all_heirs):
-            out.append(Button(900, 650, 180, 28, "More heirs",
-                              self.next_heir_page))
         return out
 
     def next_page(self):
@@ -140,48 +286,8 @@ class SettlementScreen:
     def previous_page(self):
         self.unit_page = max(0, self.unit_page - 1)
 
-    def next_heir_page(self):
-        self.heir_page += 1
-
-    def previous_heir_page(self):
-        self.heir_page = max(0, self.heir_page - 1)
-
-    def _train_full(self):
-        realm = self._realm()
-        used = sum(1 for o in realm.orders if o.kind == "train")
-        total = self.campaign.player.training_slots(self.campaign.settlements)
-        return used >= total
-
-    def _can_train(self, uid):
-        if self._train_full():
-            return False
-        hp = self.campaign.hero_party(self.campaign.player.key)
-        if hp is None or uid not in hp.unit_ids:
-            return False
-        return True
-
-    def _best_gear(self, u):
-        realm = self._realm()
-        if realm is None:
-            return None
-        can = realm.supplies(self.campaign.settlements)
-        spec = C.KITS
-        if u.stat("ranged") > u.stat("melee"):
-            for kit in ("heavy_bow", "bow"):
-                if spec[kit]["need"] and spec[kit]["need"] not in can:
-                    continue
-                if realm.gold >= spec[kit]["gold"] * 2:
-                    return kit
-        if "smithy" in can:
-            for kit in ("two_hand", "heavy"):
-                if realm.gold >= spec[kit]["gold"] * 2:
-                    return kit
-        if realm.gold >= spec["light"]["gold"] * 3:
-            return "light"
-        return None
-
     def do_train(self, uid):
-        self._do(self.campaign.order_train(uid, 1))
+        self._do(self.campaign.order_train(uid, 1, focus=self._training_focus()))
 
     def do_gear(self, uid, kit):
         self._do(self.campaign.order_gear(uid, kit))
@@ -190,28 +296,15 @@ class SettlementScreen:
         self._do(self.campaign.close_building(self.sid, kind))
 
     def _can_build(self, kind):
-        realm = self._realm()
-        h = self._holding()
-        if realm is None:
-            return False
-        if kind in h.buildings:
-            return False
-        if h.building_slots_free() <= 0:
-            return False
-        spec = C.BUILDINGS[kind]
-        req = spec["req"]
-        if req and h.size_index() < C.SIZE_ORDER.index(req):
-            return False
-        return realm.gold >= spec["gold"]
+        return self._build_reason(kind) is None
 
-    # ------------------------------------------------------------ actions
-    def _do(self, res):
-        if res is not None and getattr(res, "ok", False):
+    def _do(self, result):
+        if result is not None and getattr(result, "ok", False):
             self.app.audio.sfx("click")
-            self.hint = getattr(res, "reason", "") or "done"
+            self.hint = getattr(result, "reason", "") or "done"
         else:
             self.app.audio.sfx("cant")
-            self.hint = getattr(res, "reason", "") or "not allowed"
+            self.hint = getattr(result, "reason", "") or "not allowed"
 
     def do_build(self, kind):
         self._do(self.campaign.order_build(self.sid, kind))
@@ -231,88 +324,63 @@ class SettlementScreen:
     def do_develop(self):
         self._do(self.campaign.order_develop(self.sid))
 
+    def do_sell(self):
+        self._do(self.campaign.convert_market(self.sid, "sell"))
+
+    def do_buy(self):
+        self._do(self.campaign.convert_market(self.sid, "buy"))
+
     def do_found(self):
         self.app.found_mode = True
         self.app.mode = "campaign"
-        self.app.campaign_screen.hint = ("Found mode: click empty plains "
-                                         "beside your own land")
+        self.app.campaign_screen.hint = "Found mode: click an empty adjacent plains or ruins hex"
         self.app.audio.sfx("click")
 
     def do_back(self):
         self.app.mode = "campaign"
         self.app.audio.sfx("close")
 
-    # ------------------------------------------------------------- events
-    def handle(self, ev):
-        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            mx, my = ev.pos
-            for b in self._build_buttons():
-                if b.hit(mx, my):
-                    b.on_click()
+    def handle(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for button in self._build_buttons():
+                if button.hit(*event.pos):
+                    button.on_click()
                     return
-            # click a unit row in the right column -> designate heir
-            realm = self._realm()
-            units = realm.living_units(self.campaign.units)
-            start = self.heir_page * 8
-            units = units[start:start + 8]
-            y0 = self._units_start_y()
-            for i, u in enumerate(units):
-                if 700 <= mx <= 1250 and y0 + i * 18 <= my < y0 + (i + 1) * 18:
-                    self._do(self.campaign.designate_heir(
-                        None if realm.heir == u.id else u.id))
-                    return
-        elif ev.type == pygame.KEYDOWN:
-            k = ev.key
-            if k in (pygame.K_ESCAPE, pygame.K_BACKSPACE, pygame.K_o):
-                self.app.mode = "campaign"
-                self.app.audio.sfx("close")
+        elif event.type == pygame.KEYDOWN and event.key in (
+                pygame.K_ESCAPE, pygame.K_BACKSPACE, pygame.K_o):
+            self.do_back()
 
-    def _heir_start_y(self):
-        return self._units_start_y()
-
-    # --------------------------------------------------------------- draw
-    def _units_start_y(self):
-        realm = self._realm()
-        return 390
-
-    def draw(self, surf):
-        draw_panel(surf, 0, 0, SCREEN_W, SCREEN_H)
-        f = self.app.fonts
-        realm = self._realm()
-        h = self._holding()
-        draw_text(surf, f["big"], "%s (%s)" % (h.name, h.size), 24, 16,
-                  (40, 26, 14))
-        draw_text(surf, f["small"],
-                  "Gold %s    Wheat %s    Population %d" % (
-                      _f(realm.gold), _f(realm.wheat), realm.population),
+    def draw(self, surface):
+        draw_panel(surface, 0, 0, SCREEN_W, SCREEN_H)
+        fonts, realm, holding = self.app.fonts, self._realm(), self._holding()
+        draw_text(surface, fonts["big"], "%s (%s)" % (holding.name, holding.size),
+                  24, 16, (40, 26, 14))
+        draw_text(surface, fonts["small"],
+                  "Gold %s    Wheat %s    Population %d" %
+                  (_f(realm.gold), _f(realm.wheat), realm.population),
                   24, 64, (30, 30, 30))
-        draw_text(surf, f["small"],
-                  "Garrison cap %d    Slots %d free    morale mod %+d" % (
-                      h.garrison_cap(), h.building_slots_free(),
-                      h.morale_effect()), 24, 84, (70, 60, 40))
-        for b in self._build_buttons():
-            b.draw(surf, f["small"])
-        draw_text(surf, f["small"], self.hint, 16, SCREEN_H - 40,
+        draw_text(surface, fonts["small"],
+                  "Garrison cap %d    Slots %d free    morale mod %+d" %
+                  (holding.garrison_cap(), holding.building_slots_free(),
+                   holding.morale_effect()), 24, 84, (70, 60, 40))
+        for button in self._build_buttons():
+            button.draw(surface, fonts["small"])
+        draw_text(surface, fonts["small"], self.hint, 16, SCREEN_H - 40,
                   (150, 40, 30))
-        # orders panel on the right
-        x = 700
-        draw_text(surf, f["small"], "Realm orders:", x, 140, (40, 30, 20))
+        draw_text(surface, fonts["small"], "Realm orders (heir selection: Court)",
+                  700, 140, (40, 30, 20))
         y = 166
-        for o in realm.orders:
-            draw_text(surf, f["small"], "%s  -  %d months" %
-                      (o.label(), o.months), x, y, (60, 50, 34))
+        for order in realm.orders:
+            draw_text(surface, fonts["small"], "%s - %d months" %
+                      (order.label(), order.months), 700, y, (60, 50, 34))
             y += 20
-        draw_text(surf, f["small"], "Heir (click a name):", x,
-                  self._units_start_y() - 28, (40, 30, 20))
-        y = self._units_start_y()
-        heirs = realm.living_units(self.campaign.units)
-        start = self.heir_page * 8
-        for u in heirs[start:start + 8]:
-            tag = ("[hero]" if u.id == realm.hero else
-                   "[heir]" if u.id == realm.heir else "")
-            draw_text(surf, f["small"], "%s %s" % (tag, u.name), x, y,
-                      (60, 50, 34))
-            y += 18
-        draw_text(surf, f["small"], "Page %d/%d" % (
-            self.heir_page + 1, max(1, (len(heirs) + 7) // 8)),
-                  x, 625, (80, 60, 40))
+        party = self.campaign.hero_party(realm.key)
+        draw_text(surface, fonts["small"], "Field company", 700, 450, (40, 30, 20))
+        y = 476
+        if party:
+            for uid in list(party.unit_ids)[:12]:
+                unit = self.campaign.units.get(uid)
+                if unit and unit.alive:
+                    draw_text(surface, fonts["small"], "%s  [%s]" %
+                              (unit.name, unit.kit), 700, y, (60, 50, 34))
+                    y += 18

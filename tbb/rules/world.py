@@ -1,13 +1,11 @@
-"""The campaign hex world: terrain grid plus shared placement helpers."""
-from . import constants as C
+"""Deterministic campaign map data; no presentation imports."""
 from . import terrain as T
-
 
 class World:
     def __init__(self, width, height):
-        self.width = width
-        self.height = height
-        self.grid = {}  # (q, r) -> terrain code
+        self.width, self.height = width, height
+        self.grid = {}
+        self.crossings = {}  # river hex -> ford or bridge
 
     def in_bounds(self, pos):
         q, r = pos
@@ -16,20 +14,30 @@ class World:
     def terrain(self, pos):
         return self.grid.get(tuple(pos))
 
-    def set_terrain(self, pos, terrain):
-        self.grid[tuple(pos)] = terrain
+    def set_terrain(self, pos, value):
+        self.grid[tuple(pos)] = value
+
+    def set_crossing(self, pos, kind="ford"):
+        if self.terrain(pos) != "river":
+            raise ValueError("crossings belong on river hexes")
+        if kind not in ("ford", "bridge"):
+            raise ValueError("crossing must be a ford or bridge")
+        self.crossings[tuple(pos)] = kind
+
+    def crossing(self, pos):
+        return self.crossings.get(tuple(pos))
 
     def neighbours(self, pos):
         return T.neighbours(*pos, self.width, self.height)
 
     def is_passable(self, pos):
-        return T.is_passable(self.terrain(pos))
+        return T.is_passable(self.terrain(pos), self.crossing(pos))
 
     def walkable_neighbours(self, pos):
         return [n for n in self.neighbours(pos) if self.is_passable(n)]
 
     def all_hexes(self):
-        return list(self.grid.keys())
+        return list(self.grid)
 
     def hex_count(self):
         return len(self.grid)

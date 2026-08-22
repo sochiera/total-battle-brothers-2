@@ -52,14 +52,34 @@ def _grass_tile(seed, base=(96, 118, 74)):
 
 def terrain_sprites():
     sp = {}
-    sp[C.TERRAIN_PLAIN] = _grass_tile(1)
-    sp[C.TERRAIN_WOODS] = woods_tile(2)
+    sp[C.TERRAIN_PLAINS] = _grass_tile(1)
+    sp[C.TERRAIN_FOREST] = woods_tile(2)
     sp[C.TERRAIN_HILLS] = hill_tile(3)
     sp[C.TERRAIN_RIVER] = river_tile(4)
-    sp[C.TERRAIN_WATER] = water_tile(5)
-    sp[C.TERRAIN_WASTE] = waste_tile(6)
+    sp[(C.TERRAIN_RIVER, "ford")] = crossing_tile(8, "ford")
+    sp[(C.TERRAIN_RIVER, "bridge")] = crossing_tile(9, "bridge")
+    sp[C.TERRAIN_ROAD] = road_tile(5)
+    sp[C.TERRAIN_RUINS] = ruins_tile(6)
     sp[C.TERRAIN_VILLAGE] = village_tile(7)
     return sp
+
+
+def road_tile(seed):
+    s = _grass_tile(seed, (102, 112, 72))
+    for y in range(9, 15):
+        for x in range(24):
+            _px(s, x, y, (122, 92, 62) if (x + y) % 5 else (92, 70, 52))
+    return s
+
+
+def crossing_tile(seed, kind):
+    s = river_tile(seed)
+    colour = (186, 151, 92) if kind == "ford" else (92, 62, 42)
+    for y in range(9, 15):
+        for x in range(24):
+            if kind == "ford" or x % 4 != 0:
+                _px(s, x, y, colour)
+    return s
 
 
 def village_tile(seed):
@@ -122,20 +142,7 @@ def river_tile(seed):
     return s
 
 
-def water_tile(seed):
-    rng = random.Random(seed)
-    s = _new(24, 24)
-    for y in range(24):
-        for x in range(24):
-            c = _fuzzy(rng, (38, 62, 100), 6)
-            _px(s, x, y, c)
-    for yy in range(2, 24, 5):
-        for xx in range(24):
-            _px(s, xx, yy, (60, 88, 130))
-    return s
-
-
-def waste_tile(seed):
+def ruins_tile(seed):
     rng = random.Random(seed)
     s = _new(24, 24)
     for y in range(24):
@@ -274,7 +281,7 @@ def unit_sprite(colour, kit, hero=False):
             _px(s, 7, y, colour)
         _px(s, 8, 3, colour)
     # shield
-    if "." in kit or "heavy" in kit or "two" in kit or "militia" in kit:
+    if "shield" in kit or "heavy" in kit:
         for y in range(9, 15):
             for x in range(1, 4):
                 _px(s, x, y, (90, 40, 36))
@@ -284,7 +291,7 @@ def unit_sprite(colour, kit, hero=False):
         for y in range(5, 16):
             _px(s, 13, y, (104, 74, 40))
         _px(s, 12, 6, (80, 80, 80))
-    elif kit in ("two_hand",):
+    elif kit in ("two_hand", "two_hander"):
         for y in range(6, 18):
             _px(s, 13, y, (150, 160, 168))
     else:
