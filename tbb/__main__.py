@@ -1,6 +1,7 @@
 """Run the game from the project venv.
 
     .venv/bin/python3 -m tbb [--seed N] [--new-game] [--frames K]
+    .venv/bin/python3 -m tbb --dump-frames DIR
 """
 import argparse
 
@@ -15,6 +16,8 @@ def main(argv=None):
                         help="auto-resolve any pending battle after launch")
     parser.add_argument("--frames", type=int, default=None,
                         help="exit after K rendered frames (smoke testing)")
+    parser.add_argument("--dump-frames", metavar="DIR",
+                        help="render campaign, settlement, court, and battle PNGs")
     parser.add_argument("--save-smoke", metavar="SLOT",
                         help="write and load a pygame-free named save slot")
     args = parser.parse_args(argv)
@@ -26,6 +29,12 @@ def main(argv=None):
         persistence.save(campaign, args.save_smoke)
         if persistence.load(args.save_smoke) is None:
             raise RuntimeError("save smoke slot could not be loaded")
+        return 0
+    if args.dump_frames:
+        from tbb.app.main import dump_frames
+        from tbb.rules import constants as C
+        dump_frames(args.dump_frames,
+                    args.seed if args.seed is not None else C.DEFAULT_SEED)
         return 0
     from tbb.app.main import App
 

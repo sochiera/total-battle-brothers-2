@@ -22,6 +22,18 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python3 -m tbb \
   --seed 734102 --new-game --frames 45
 ```
 
+To inspect the live happy path without a display, render all four main screens
+to PNG files:
+
+```sh
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/python3 -m tbb \
+  --seed 734102 --dump-frames /tmp/tbb-frames
+test -s /tmp/tbb-frames/campaign.png
+test -s /tmp/tbb-frames/settlement.png
+test -s /tmp/tbb-frames/court.png
+test -s /tmp/tbb-frames/battle.png
+```
+
 For a display-free save check, use the rules-only CLI path:
 
 ```sh
@@ -111,10 +123,12 @@ not want to issue individual unit orders.
 ## Summary and test evidence
 
 Rules are in `tbb/rules` and import no pygame; presentation is in `tbb/app`.
-Run `.venv/bin/python3 -m pytest -q` for headless tests, the `--save-smoke`
-command above for a real JSON slot, and the dummy-video command above for the
-launch smoke check. The checked-in suite covers movement, economy, AI orders,
-talents, battle writeback, succession, victory/defeat, save/load, and pygame
-isolation. Last verification: 26 tests passed and the 45-frame dummy SDL smoke
-(`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run.sh --seed 734102
---new-game --frames 45`) completed successfully.
+Run `.venv/bin/python3 -m pytest -q` for the 35 headless tests, the
+`--save-smoke` command above for a real JSON slot, the dummy `--frames` command
+above for a launch smoke check, and dummy `--dump-frames` to inspect the four
+display-free screens. The checked-in suite covers start layouts and names,
+staffed economy, population carry, movement, AI orders, talents, battle
+writeback, succession, victory/defeat, save/load, art files, frame dumping, and
+pygame isolation. Last verification: 35 tests passed and the 45-frame dummy SDL
+smoke (`SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run.sh --seed 734102
+--new-game --frames 45`) plus four-screen dump completed successfully.

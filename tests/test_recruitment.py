@@ -11,7 +11,7 @@ def test_worker_floor_is_proved_with_a_staffed_building():
     party.move_to(holding.hex)
     realm.gold = realm.wheat = 100
     holding.buildings[C.BUILDING_FARM] = Building(C.BUILDING_FARM, staffed=True)
-    realm.population = 2
+    realm.population = realm.staff_total(campaign.settlements) + 1
     before = len(party.unit_ids)
     target = next(n for n in campaign.world.neighbours(holding.hex)
                   if campaign.settlement_at(n) is None)

@@ -1,6 +1,7 @@
 from tbb.rules import constants as C
 from tbb.rules.campaign import Campaign
 from tbb.rules.settlements import Building
+from tbb.rules import ai
 
 
 def test_staffing_food_market_and_closing_returns_population():
@@ -61,3 +62,40 @@ def test_fractional_births_and_immigration_carry_between_months():
     assert realm.population_fraction > 0
     campaign._account(realm)
     assert realm.population >= starting
+
+
+def test_fractional_population_carries_across_real_months():
+    campaign = Campaign(16)
+    realm = campaign.player
+    realm.population = 2
+    realm.population_fraction = 0.0
+    realm.wheat = 100000
+    realm.morale = 100
+    campaign._ai_and_bandit_turn = lambda: None
+    for _ in range(1):
+        assert campaign.end_turn()
+    assert realm.population_fraction > 0
+    for _ in range(30):
+        if realm.population > 2:
+            break
+        if campaign.pending_battles:
+            campaign.auto_resolve_pending()
+        assert campaign.end_turn()
+    assert realm.population > 2
+
+
+def test_ai_target_score_prefers_far_weak_or_neutral_holding():
+    campaign = Campaign(17)
+    rival = campaign.realms[1]
+    strong = campaign.settlements[rival.settlement_ids[0]]
+    weak = next(holding for holding in campaign.settlements.values()
+                if holding.owner is None)
+    strong.hex = (2, 0)
+    weak.hex = (8, 0)
+    campaign.garrison_party(weak.id).unit_ids.clear()
+    for uid in campaign.garrison_party(strong.id).unit_ids:
+        campaign.units[uid].stats["melee"] = 70
+    assert ai._target_score(campaign, weak, (0, 0)) > \
+        ai._target_score(campaign, strong, (0, 0))
+    campaign.settlements = {strong.id: strong, weak.id: weak}
+    assert ai.choose_march_target(campaign, 0, (0, 0)) == weak.id

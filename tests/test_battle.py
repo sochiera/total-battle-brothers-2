@@ -113,3 +113,14 @@ def test_battle_los_uses_hex_intermediate_cells_and_terrain_modifiers():
     battle.positions[defender_id] = (4, 3)
     battle.canvas[(3, 2)] = C.TERRAIN_FOREST
     assert not battle._line_clear((2, 2), (4, 3))
+
+
+def test_river_field_keeps_deployment_columns_clear():
+    field = B.generate_field(C.TERRAIN_RIVER)
+    attacker = {q for (q, _r) in field if q in range(1, 4)}
+    defender = {q for (q, _r) in field if q in range(C.BATTLE_WIDTH - 4,
+                                                       C.BATTLE_WIDTH - 1)}
+    assert all(field[(q, r)] != C.TERRAIN_RIVER
+               for q in attacker | defender
+               for r in range(C.BATTLE_HEIGHT))
+    assert any(value == C.TERRAIN_RIVER for value in field.values())

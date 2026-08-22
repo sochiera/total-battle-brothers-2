@@ -469,6 +469,7 @@ class Campaign:
 
     def _account(self, realm):
         holdings = realm.holdings(self.settlements)
+        capacity = realm.holdings_cap(self.settlements)
         produced = sum(holding.food_produced(self._local_population(realm, holding))
                        for holding in holdings)
         living = len(realm.living_units(self.units))
@@ -492,23 +493,21 @@ class Campaign:
         if realm.gold < 0:
             realm.gold = 0
             realm.morale += C.UNPAID_UPKEEP_MORALE
-        if (realm.wheat > 0 and
-                realm.population < realm.holdings_cap(self.settlements)):
+        if realm.population >= capacity:
+            realm.population_fraction = 0.0
+        elif realm.wheat > 0:
             growth = ((realm.population * C.BIRTH_RATE +
                        realm.population * C.IMMIGRATION_RATE) *
                       (realm.morale / 100.0)) + realm.population_fraction
             whole = int(growth)
-            realm.population = min(realm.holdings_cap(self.settlements),
+            realm.population = min(capacity,
                                    realm.population + whole)
-            if realm.population >= realm.holdings_cap(self.settlements):
+            if realm.population >= capacity:
                 realm.population_fraction = 0.0
             else:
                 realm.population_fraction = growth - whole
         realm.morale = max(0, min(
             100, realm.morale + realm.morale_from_holdings(self.settlements)))
-
-    def _population_growth(self, realm):
-        self._account(realm)
 
     def _resolve_realm_month(self, realm):
         if realm.destroyed:
@@ -550,7 +549,8 @@ class Campaign:
         elif order.kind == "develop":
             self.settlements[order.settlement_id].size = order.kind_data
         elif order.kind == "found":
-            holding = Holding(self._new_sid(), N.settlement_name(self.rng),
+            names = {holding.name for holding in self.settlements.values()}
+            holding = Holding(self._new_sid(), N.unique_settlement_name(self.rng, names),
                               order.kind_data, C.SIZE_V, realm.key)
             self.settlements[holding.id] = holding
             realm.settlement_ids.append(holding.id)

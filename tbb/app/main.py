@@ -5,6 +5,7 @@ in tbb.rules and are read-only through the Campaign object; presentation never
 reaches into rules internals.
 """
 import pygame
+from pathlib import Path
 
 from tbb.rules import constants as C
 from tbb.rules.campaign import Campaign
@@ -220,6 +221,52 @@ class App:
             self.battle_screen.draw(self.display)
         elif self.mode == "court":
             self.court_screen.draw(self.display)
+
+
+def dump_frames(directory, seed=C.DEFAULT_SEED):
+    """Render the four live screens into inspectable PNGs without a window."""
+    from tbb.rules import battle as battle_rules
+
+    output = Path(directory)
+    output.mkdir(parents=True, exist_ok=True)
+    app = None
+    try:
+        app = App()
+        app.new_game(seed)
+
+        def capture(name):
+            pygame.display.flip()
+            pygame.image.save(app.display, str(output / name))
+
+        app._draw()
+        capture("campaign.png")
+
+        app.mode = "settlement"
+        app.settlement_screen.load(app.campaign,
+                                   app.campaign.player.settlement_ids[0])
+        app._draw()
+        capture("settlement.png")
+
+        app.enter_court()
+        app._draw()
+        capture("court.png")
+
+        hero_party = app.campaign.hero_party(C.PLAYER_REALM_KEY)
+        bandit_party = next(
+            (party for party in app.campaign.parties
+             if party.kind == "bandit" and
+             party.alive_units(app.campaign.units)), None)
+        battle = battle_rules.battle_from_contact(
+            app.campaign, hero_party, bandit_party) if bandit_party else None
+        if battle is None:
+            raise RuntimeError("could not build a battle against a living robber party")
+        app.start_battle(battle)
+        app._draw()
+        capture("battle.png")
+    finally:
+        if app is not None:
+            app.audio.music_stop()
+        pygame.quit()
 
 
 if __name__ == "__main__":

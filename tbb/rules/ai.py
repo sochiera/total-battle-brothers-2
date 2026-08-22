@@ -213,7 +213,7 @@ def _march(campaign, realm):
     if not campaign.units[realm.hero].alive:
         return
     while party.mp > 0 and not campaign.pending_battles:
-        sid = nearest_hostile(campaign, realm.key, party.hex)
+        sid = choose_march_target(campaign, realm.key, party.hex)
         if sid is None:
             return
         realm.ai_target = sid

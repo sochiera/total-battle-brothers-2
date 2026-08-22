@@ -3,7 +3,7 @@ from . import constants as C
 from . import names as N
 from . import terrain as GEO
 from . import world as W
-from .settlements import Holding
+from .settlements import Holding, Building
 from .realm import Realm
 from .parties import Party
 from .units import Unit
@@ -17,6 +17,7 @@ class Generator:
         self.rng = rng; self.world = W.World(C.MAP_WIDTH, C.MAP_HEIGHT)
         self.settlements, self.realms, self.units = {}, {}, {}
         self.parties = []; self.uid = self.sid = self.pid = 0; self.taken = {}
+        self.realm_names, self.settlement_names = set(), set()
 
     def _id(self, attr):
         value = getattr(self, attr) + 1; setattr(self, attr, value); return value
@@ -77,9 +78,16 @@ class Generator:
         self.units[uid] = unit; return unit
 
     def _holding(self, realm, pos, size):
-        sid = self._id("sid"); name = N.settlement_name(self.rng)
+        sid = self._id("sid")
+        name = N.unique_settlement_name(self.rng, self.settlement_names)
         owner = realm.key if realm else None
         h = Holding(sid, name, pos, size, owner)
+        if size in (C.SIZE_T, C.SIZE_C):
+            h.buildings[C.BUILDING_FARM] = Building(C.BUILDING_FARM, staffed=True)
+            h.buildings[C.BUILDING_MARKET] = Building(C.BUILDING_MARKET, staffed=True)
+            if size == C.SIZE_C:
+                h.buildings[C.BUILDING_MILITIA_HALL] = Building(
+                    C.BUILDING_MILITIA_HALL, staffed=True)
         self.settlements[sid] = h
         if owner is not None: realm.settlement_ids.append(sid)
         self.world.set_terrain(pos, C.TERRAIN_VILLAGE)
@@ -99,15 +107,18 @@ class Generator:
     def _party_for_holding(self, sid): return next(p for p in self.parties if p.settlement_id == sid)
 
     def _create_realm(self, key, center):
-        realm = Realm(key, N.realm_name(self.rng), key == C.PLAYER_REALM_KEY, COLORS[key])
+        realm = Realm(key, N.unique_realm_name(self.rng, self.realm_names),
+                      key == C.PLAYER_REALM_KEY, COLORS[key])
         self.realms[key] = realm
         archetype = self._archetype()
         realm.start_archetype = archetype
         sizes = self._sizes(archetype)
         used = [center]
         for index, size in enumerate(sizes):
-            pos = center if index == 0 else self._far_cell(self.suitable_cells(), used, 2)
-            if pos is None: continue
+            pos = center if index == 0 else self._far_cell(
+                self.suitable_cells(), used, 2)
+            if pos is None:
+                raise RuntimeError("worldgen could not place the selected start layout")
             used.append(pos); h = self._holding(realm, pos, size)
             if index == 0: capital = h
         hero = self._make_unit(key, True, capital.name); realm.hero = hero.id; realm.unit_ids.add(hero.id)
@@ -120,7 +131,11 @@ class Generator:
         garrison = self._party_for_holding(capital.id)
         for _ in range(min(2, capital.garrison_cap())):
             unit = self._make_unit(key, False, capital.name); realm.unit_ids.add(unit.id); garrison.add(unit.id)
-        realm.gold = self.rng.randint(160, 260); realm.wheat = self.rng.randint(80, 140); realm.population = self.rng.randint(18, 30)
+        realm.gold = self.rng.randint(160, 260)
+        realm.wheat = self.rng.randint(80, 140)
+        minimum_workers = realm.staff_total(self.settlements) + 1
+        realm.population = min(realm.holdings_cap(self.settlements),
+                               max(self.rng.randint(18, 30), minimum_workers))
         return realm
 
     def _neutrals(self, pool, centers):

@@ -34,3 +34,18 @@ def realm_name(rng):
 
 def settlement_name(rng):
     return rng.choice(SETTLEMENT_NAMES)
+
+def _unique(rng, chooser, taken):
+    base = chooser(rng)
+    name, suffix = base, 2
+    while name in taken:
+        name = f"{base} {suffix}"
+        suffix += 1
+    taken.add(name)
+    return name
+
+def unique_realm_name(rng, taken):
+    return _unique(rng, realm_name, taken)
+
+def unique_settlement_name(rng, taken):
+    return _unique(rng, settlement_name, taken)

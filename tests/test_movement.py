@@ -1,6 +1,7 @@
 from tbb.rules import constants as C
 from tbb.rules.campaign import Campaign
 from tbb.rules.settlements import Building
+from tbb.rules import ai
 
 
 def test_movement_costs_roads_rivers_and_hero_lock():
@@ -57,3 +58,24 @@ def test_hostile_party_contact_opens_a_player_battle():
     player_party.mp = 4
     assert campaign.move_party(player_party.pid, target)
     assert campaign.pending_battles
+
+
+def test_robber_steps_onto_road_and_gets_one_fresh_bonus():
+    campaign = Campaign(18)
+    robber = next(p for p in campaign.parties if p.kind == "bandit")
+    target = campaign.settlements[campaign.realms[1].settlement_ids[0]]
+    robber.move_to((2, 2))
+    target.hex = (3, 2)
+    campaign.world.set_terrain(robber.hex, C.TERRAIN_PLAINS)
+    campaign.world.set_terrain(target.hex, C.TERRAIN_ROAD)
+    robber.mp = C.CAMPAIGN_MOVEMENT_POINTS
+    robber.road_bonus = False
+    original = ai.choose_march_target
+    ai.choose_march_target = lambda *_args, **_kwargs: target.id
+    try:
+        ai._bandits_month(campaign)
+    finally:
+        ai.choose_march_target = original
+    assert robber.hex == target.hex
+    assert robber.mp == C.CAMPAIGN_MOVEMENT_POINTS
+    assert robber.road_bonus

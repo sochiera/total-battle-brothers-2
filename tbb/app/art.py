@@ -204,7 +204,7 @@ def rng_ish(n):
 
 def town_sprite(col):
     s = _new(28, 28)
-    village_sprite(col)
+    s.blit(village_sprite(col), (1, 1))
     # palisade
     for x in range(2, 25):
         _px(s, x, 19, (122, 96, 62))
