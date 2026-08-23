@@ -11,10 +11,22 @@ SURNAMES = ("the Grim", "the Stern", "Blackheart", "Ironhand", "the Bitter",
             "of the High Road", "the Starved")
 REALM_NAMES = ("Aldmere", "Bracken", "Coldwell", "Dunmarsh", "East Fell",
                "Greyford", "Harrow", "Longfield", "Redwater", "Stonebridge",
-               "Westmarch", "Wycham")
+               "Westmarch", "Wycham", "Ashen Vale", "Blackmere", "Crownfield",
+               "Dalehurst", "Eldwater", "Foxcombe", "Greenbarrow", "High Rill",
+               "Ironmere", "Kingsfield", "Lowmarsh", "Northwatch", "Oakrest",
+               "Pennford", "Ravenholt", "Southmere", "Thornwick", "White Down")
 SETTLEMENT_NAMES = ("Brek", "Ford", "Hay", "Moor", "Wyn", "Aston", "Kettle",
                     "Raven", "Barrow", "Sted", "Oakham", "Nettle", "Dreber",
-                    "Somme", "Toren", "Ashby", "Crowle", "Middleton", "Witherholm")
+                    "Somme", "Toren", "Ashby", "Crowle", "Middleton", "Witherholm",
+                    "Briar", "Chalk", "Dun", "Elm", "Fallow", "Gorse", "Hearth",
+                    "Ivydale", "Juniper", "Kirk", "Lark", "Marden", "Nook",
+                    "Orchard", "Pike", "Quarry", "Rowan", "Sable", "Tarn",
+                    "Umber", "Vane", "Willow", "Yew", "Zeal")
+REGION_NAMES = ("The Western March", "The Crown Vale", "The Eastern Weald",
+                "The Southern Fields", "The Northern Downs", "The Riverlands",
+                "The High Country", "The Low Country")
+RIVER_NAMES = ("Greywater", "Red Run", "The Mereflow", "Kingswater",
+               "Blackstream", "The Long Ford")
 
 def warrior_name(rng):
     return f"{rng.choice(FIRST_NAMES)} {rng.choice(SURNAMES)}"
@@ -37,10 +49,19 @@ def settlement_name(rng):
 
 def _unique(rng, chooser, taken):
     base = chooser(rng)
-    name, suffix = base, 2
+    name = base
+    # A numeric suffix is easy to spot in the UI and makes a generated world
+    # feel like a collision.  Use a historical qualifier instead, and keep a
+    # final deterministic pool for adversarial fixed-choice RNGs in tests.
+    qualifiers = ("East", "West", "North", "South", "Upper", "Lower",
+                  "by the Ford", "on the Hill", "of the Downs", "in the Vale")
+    index = 0
     while name in taken:
-        name = f"{base} {suffix}"
-        suffix += 1
+        qualifier = qualifiers[index % len(qualifiers)]
+        name = f"{base} {qualifier}"
+        index += 1
+        if index >= len(qualifiers) and name in taken:
+            name = f"{base} {chr(65 + (index - len(qualifiers)) % 26)}"
     taken.add(name)
     return name
 

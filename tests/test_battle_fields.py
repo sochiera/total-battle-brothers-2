@@ -21,7 +21,7 @@ def _adjacent(battle):
 
 
 # ------------------------------------------------------------- field shape
-def test_field_is_18x13_and_themed_by_contact_terrain():
+def test_field_is_large_and_themed_by_contact_terrain():
     sparse = {C.TERRAIN_RIVER, C.TERRAIN_MOUNTAIN}
     for terrain in C.CAMPAIGN_TERRAINS:
         field = B.generate_field(terrain)
@@ -199,6 +199,29 @@ def test_assault_victory_transfers_the_holding():
     assert campaign.settlements[sid].owner == campaign.player.key
     assert sid in campaign.player.settlement_ids
     assert sid not in target_realm.settlement_ids
+
+
+def test_prepared_assault_has_walled_holding_advantage_and_named_flag():
+    campaign = Campaign(68)
+    hero = campaign.hero_party(campaign.player.key)
+    target_realm = campaign.realms[1]
+    sid = target_realm.settlement_ids[0]
+    holding = campaign.settlements[sid]
+    guard = campaign.garrison_party(sid)
+    for uid in list(guard.unit_ids):
+        guard.remove(uid)
+    unit = campaign._make_unit(1, holding.name)
+    target_realm.unit_ids.add(unit.id)
+    guard.add(unit.id)
+    hero.move_to(holding.hex)
+    assault = campaign._make_battle(hero, guard, True)
+    field_fight = B.battle_from_contact(campaign, hero, guard, False)
+    assert assault.prepared_assault
+    assert assault.target_sid == sid
+    attacker = campaign.units[assault.sides["attacker"][0]]
+    defender = campaign.units[assault.sides["defender"][0]]
+    assert assault.hit_chance(attacker, defender) < \
+        field_fight.hit_chance(attacker, defender)
 
 
 def test_walking_into_an_undefended_holding_takes_it():

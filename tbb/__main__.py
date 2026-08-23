@@ -18,6 +18,9 @@ def main(argv=None):
                         help="exit after K rendered frames (smoke testing)")
     parser.add_argument("--dump-frames", metavar="DIR",
                         help="render campaign, settlement, court, and battle PNGs")
+    parser.add_argument("--ending", "--force-ending", dest="ending",
+                        choices=("victory", "defeat"),
+                        help="ending shown in the dump epilogue")
     parser.add_argument("--save-smoke", metavar="SLOT",
                         help="write and load a pygame-free named save slot")
     args = parser.parse_args(argv)
@@ -34,7 +37,8 @@ def main(argv=None):
         from tbb.app.main import dump_frames
         from tbb.rules import constants as C
         dump_frames(args.dump_frames,
-                    args.seed if args.seed is not None else C.DEFAULT_SEED)
+                    args.seed if args.seed is not None else C.DEFAULT_SEED,
+                    args.ending or "victory")
         return 0
     from tbb.app.main import App
 

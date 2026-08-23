@@ -19,6 +19,8 @@ def _f(n):
 
 
 class CampaignScreen:
+    RESOURCE_Y = 248
+    SETTLEMENT_Y = 306
     def __init__(self, app):
         self.app = app
         self.campaign = None
@@ -73,6 +75,15 @@ class CampaignScreen:
             out.append(Button(x, y, 158, 30, label, fn, enabled))
         return out
 
+    def layout_contract(self):
+        """Geometry contract used by UI smoke tests and future skins."""
+        buttons = self._make_buttons()
+        resource = (SCREEN_W - PANEL_W + 8, self.RESOURCE_Y, PANEL_W - 16, 42)
+        settlement = (SCREEN_W - PANEL_W + 8, self.SETTLEMENT_Y,
+                      PANEL_W - 16, 150)
+        return {"resource": resource, "settlement": settlement,
+                "buttons": [b.rect for b in buttons]}
+
     # ------------------------------------------------------------ actions
     def end_month(self):
         c = self.campaign
@@ -91,6 +102,7 @@ class CampaignScreen:
         self.hint = "Month turned - %s" % res.reason
         if c.ended:
             self.hint = ("The realm has ended: %s" % c.end_reason)
+            self.app.show_epilogue()
 
     def _tween_walkers(self):
         """Turn the end-of-month walker steps into visible tweens."""
@@ -275,6 +287,13 @@ class CampaignScreen:
     def draw(self, surf):
         surf.fill((66, 70, 58))
         surf.blit(self.map_surf, (self.ox, self.oy))
+        tint = {C.SEASON_WINTER: (100, 140, 190, 34),
+                C.SEASON_HARVEST: (210, 150, 55, 28),
+                C.SEASON_OPEN: (80, 150, 70, 12)}[
+                    self.campaign.calendar.season]
+        veil = pygame.Surface((SCREEN_W - PANEL_W, SCREEN_H), pygame.SRCALPHA)
+        veil.fill(tint)
+        surf.blit(veil, (0, 0))
         self._overlays(surf)
         draw_panel(surf, SCREEN_W - PANEL_W, 0, PANEL_W, SCREEN_H)
         self._panel(surf)
@@ -317,6 +336,12 @@ class CampaignScreen:
                                                  (h.id % 5)))
                 pygame.draw.circle(surf, c.realms[h.owner].color,
                                    (sxx, syy), radius, 2)
+        for name, cells in c.world.regions.items():
+            if not cells:
+                continue
+            q, r = min(cells, key=lambda pos: (pos[1], pos[0]))
+            rx, ry = hex_center(q, r, self.ox, self.oy)
+            draw_text(surf, sf, name, rx + 4, ry + 4, (68, 70, 60))
         self._advance_anims()
         for p in c.parties:
             cx, cy = self._party_pixel(p)
@@ -373,15 +398,18 @@ class CampaignScreen:
             return
         draw_text(surf, f["big"], pl.name.split(" of ")[0], x, 6, (40, 26, 14))
         draw_text(surf, f["small"], c.calendar.label(), x, 42, (80, 60, 30))
+        # The resource strip is reserved below the complete button row.  The
+        # settlement card starts after it, so the chrome remains readable at
+        # every selection state.
         draw_text(surf, f["small"],
                   "Gold %s   Wheat %s" % (_f(pl.gold), _f(pl.wheat)),
-                  x, 248, (60, 45, 20))
+                  x, 252, (60, 45, 20))
         draw_text(surf, f["small"],
                   "Population %d   Morale %d" % (pl.population,
                                                  int(pl.morale)),
-                  x, 266, (60, 45, 20))
+                  x, 270, (60, 45, 20))
         # selected settlement card
-        y = 300
+        y = 310
         if self.selected_sid is not None:
             h = c.settlements.get(self.selected_sid)
             if h:

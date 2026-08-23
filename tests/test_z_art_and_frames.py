@@ -2,6 +2,11 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import pytest
+import importlib.util
+
+pytestmark = pytest.mark.skipif(importlib.util.find_spec("pygame") is None,
+                                reason="pygame is unavailable")
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,20 +64,21 @@ def test_required_pixel_art_files_are_readable_and_nontrivial(monkeypatch):
     pygame.quit()
 
 
-def test_dump_frames_writes_four_live_screens(tmp_path):
+def test_dump_frames_writes_live_screens_including_title_and_epilogue(tmp_path):
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
     subprocess.run([sys.executable, "-m", "tbb", "--seed", "734102",
                     "--dump-frames", str(tmp_path)], cwd=ROOT, env=env,
                    check=True)
     import pygame
     pygame.init()
-    expected = ("campaign.png", "settlement.png", "court.png", "battle.png")
+    expected = ("title.png", "campaign.png", "settlement.png", "court.png",
+                "battle.png", "epilogue.png")
     for name in expected:
         path = tmp_path / name
         assert path.stat().st_size > 0
         image = pygame.image.load(str(path))
         assert image.get_size() == (1280, 800)
-        if name in ("campaign.png", "battle.png"):
+        if name in ("title.png", "campaign.png", "battle.png", "epilogue.png"):
             colors = {tuple(image.get_at((x, y)))
                       for x in range(0, image.get_width(), 8)
                       for y in range(0, image.get_height(), 8)}
@@ -160,6 +166,33 @@ def test_settlement_screen_offers_garrison_transfer(monkeypatch):
     pygame.quit()
 
 
+def test_settlement_screen_offers_clickable_market_shipping(monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from types import SimpleNamespace
+    from tbb.app.settlement_screen import SettlementScreen
+    from tbb.rules.campaign import Campaign
+    from tbb.rules import constants as C
+    pygame.init()
+    pygame.display.set_mode((1, 1))
+    campaign = Campaign(13)
+    screen = SettlementScreen(SimpleNamespace(audio=SimpleNamespace(
+        sfx=lambda *_args: None)))
+    screen.load(campaign, campaign.player.settlement_ids[0])
+    target = screen._transfer_target()
+    assert target is not None
+    labels = [button.label for button in screen._build_buttons()]
+    assert any("Ship wheat" in label for label in labels)
+    assert any("Ship gold" in label for label in labels)
+    assert screen._transfer_reason(target, "wheat") is None
+    campaign.settlements[screen.sid].wheat = C.MARKET_TRANSFER_WHEAT + 1
+    screen.do_transfer("wheat", target)
+    assert campaign.settlements[screen.sid].wheat == 1
+    assert campaign.settlements[target].wheat > 0
+    pygame.quit()
+
+
 def test_campaign_and_battle_juice_frames_survive_scripted_actions(
         monkeypatch):
     monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
@@ -197,6 +230,16 @@ def test_campaign_and_battle_juice_frames_survive_scripted_actions(
         app.start_battle(battle)
         bs = app.battle_screen
         attacker = app.campaign.units[battle.sides["attacker"][0]]
+        defender = app.campaign.units[battle.sides["defender"][0]]
+        bs._fx_from_record({"kind": "melee", "unit": attacker.id,
+                            "target": defender.id, "hit": True,
+                            "reason": "hit"})
+        assert {effect["kind"] for effect in bs.fx} >= {
+            "melee_strike", "hit_flash"}
+        bs._fx_from_record({"kind": "melee", "unit": attacker.id,
+                            "target": defender.id, "hit": True,
+                            "reason": "wound"})
+        assert any(effect["kind"] == "wound_flash" for effect in bs.fx)
         bs.selected_uid = attacker.id
         for _ in range(4):
             app._draw()
@@ -210,6 +253,31 @@ def test_campaign_and_battle_juice_frames_survive_scripted_actions(
         assert campaign.ended and campaign.end_reason == "defeat"
         for _ in range(3):
             app._draw()
+    finally:
+        app.audio.music_stop()
+        pygame.quit()
+
+
+def test_live_month_end_and_battle_finish_open_epilogue(monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from tbb.app.main import App
+    from types import SimpleNamespace
+    pygame.init()
+    app = App()
+    try:
+        app.new_game(734102)
+        campaign = app.campaign
+        campaign.end_turn = lambda: (
+            setattr(campaign, "ended", True) or
+            setattr(campaign, "end_reason", "victory") or
+            SimpleNamespace(ok=True, reason="victory"))
+        app.campaign_screen.end_month()
+        assert app.mode == "epilogue"
+        app.mode = "battle"
+        app.finish_battle()
+        assert app.mode == "epilogue"
     finally:
         app.audio.music_stop()
         pygame.quit()

@@ -28,6 +28,26 @@ class Holding:
     def __init__(self, sid, name, hex_pos, size, owner=None):
         self.id, self.name, self.hex, self.size, self.owner = sid, name, tuple(hex_pos), size, owner
         self.buildings = {}
+        self.gold = 0.0
+        self.wheat = 0.0
+        self.population = C.POP_CAP[size] // 2
+        self.raid_pressure = 0
+
+    @property
+    def local_gold(self):
+        return self.gold
+
+    @local_gold.setter
+    def local_gold(self, value):
+        self.gold = value
+
+    @property
+    def local_wheat(self):
+        return self.wheat
+
+    @local_wheat.setter
+    def local_wheat(self, value):
+        self.wheat = value
     def size_index(self): return C.SIZE_ORDER.index(self.size)
     def pop_cap(self): return C.POP_CAP[self.size]
     def building_slots(self): return C.BUILDING_SLOTS[self.size]
@@ -52,10 +72,14 @@ class Holding:
         if self.has(C.BUILDING_SMITHY): result.add(C.BUILDING_SMITHY)
         if self.has(C.BUILDING_FLETCHER): result.add(C.BUILDING_FLETCHER)
         return result
-    def farm_output(self, local_population):
-        return C.FARM_BASE_WHEAT + min(local_population, self.pop_cap()) // C.FARM_POP_DIVISOR
+    def farm_output(self, local_population, season=None):
+        output = C.FARM_BASE_WHEAT + min(local_population, self.pop_cap()) // C.FARM_POP_DIVISOR
+        return output * (C.SEASON_WHEAT_MULTIPLIER.get(season, 1.0)
+                         if season else 1.0)
     def food_produced(self, local_population=0):
         return sum(self.farm_output(local_population) for k,b in self.buildings.items() if k == C.BUILDING_FARM and b.staffed)
     def snapshot(self):
         return {"id": self.id, "name": self.name, "hex": self.hex, "size": self.size,
-                "owner": self.owner, "buildings": {k: b.snapshot() for k,b in self.buildings.items()}}
+                "owner": self.owner, "gold": self.gold, "wheat": self.wheat,
+                "population": self.population, "raid_pressure": self.raid_pressure,
+                "buildings": {k: b.snapshot() for k,b in self.buildings.items()}}

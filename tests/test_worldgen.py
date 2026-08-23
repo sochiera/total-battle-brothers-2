@@ -55,5 +55,6 @@ def test_name_allocator_falls_back_after_forced_collision():
         def choice(self, _values):
             return "Raven"
     name = names.unique_settlement_name(FixedChoice(), taken)
-    assert name == "Raven 2"
+    assert name == "Raven East"
+    assert not name[-1].isdigit()
     assert name in taken

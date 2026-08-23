@@ -25,13 +25,16 @@ TILES = {
     "road": lambda: art.road_tile(5),
     "ruins": lambda: art.ruins_tile(6),
     "village": lambda: art.village_tile(7),
-    "ford": lambda: art.crossing_tile(8, "ford"),
     "bridge": lambda: art.crossing_tile(9, "bridge"),
     "mountain": lambda: art.mountain_tile(10),
     "marsh": lambda: art.marsh_tile(11),
     "farmland": lambda: art.farmland_tile(12),
     "coast": lambda: art.coast_tile(13),
     "pass": lambda: art.pass_tile(14),
+    "ford": lambda: art.crossing_tile(15, "ford"),
+    "highland_farm": lambda: art.highland_farm_tile(16),
+    "forest_track": lambda: art.forest_track_tile(17),
+    "ruined_hold": lambda: art.ruined_hold_tile(18),
 }
 
 

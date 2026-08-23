@@ -137,6 +137,31 @@ class TitleScreen:
                   SCREEN_W // 2 - 280, SCREEN_H - 80, (120, 110, 90))
 
 
+class EpilogueScreen:
+    """A full-window, unambiguous end to a campaign."""
+    def __init__(self, app):
+        self.app = app
+
+    def handle(self, ev):
+        if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_RETURN, pygame.K_ESCAPE):
+            self.app.mode = "title"
+
+    def draw(self, surf):
+        victory = self.app.campaign.end_reason == "victory"
+        surf.fill((32, 48, 38) if victory else (55, 32, 30))
+        colour = (220, 198, 126) if victory else (220, 116, 92)
+        draw_text(surf, self.app.fonts["big"],
+                  "VICTORY" if victory else "DEFEAT",
+                  SCREEN_W // 2 - 120, 250, colour)
+        draw_text(surf, self.app.fonts["med"],
+                  ("The last ruling duchy endures." if victory else
+                   "The ducal line is extinguished."),
+                  SCREEN_W // 2 - 220, 315, (230, 220, 190))
+        draw_text(surf, self.app.fonts["small"],
+                  "Press Enter or Escape to return to the title screen.",
+                  SCREEN_W // 2 - 220, 400, (190, 180, 160))
+
+
 class App:
     def __init__(self):
         pygame.init()
@@ -161,6 +186,7 @@ class App:
         self.battle_screen = BattleScreen(self)
         self.save_screen = SaveScreen(self)
         self.court_screen = CourtScreen(self)
+        self.epilogue_screen = EpilogueScreen(self)
         self.audio.music_start()
 
     # ------------------------------------------------------------- flow
@@ -196,12 +222,20 @@ class App:
         self.mode = "battle"
         self.audio.sfx("open")
 
+    def show_epilogue(self):
+        if self.campaign is not None and self.campaign.ended:
+            self.mode = "epilogue"
+            self.audio.sfx("close")
+
     def finish_battle(self):
         self.battle_screen.battle = None
         if self.campaign is not None:
             self.campaign_screen.load(self.campaign)
-        self.mode = "campaign"
-        self.audio.sfx("close")
+        if self.campaign is not None and self.campaign.ended:
+            self.show_epilogue()
+        else:
+            self.mode = "campaign"
+            self.audio.sfx("close")
 
     # --------------------------------------------------------------- loop
     def run(self, frames=None):
@@ -235,6 +269,8 @@ class App:
             self.battle_screen.handle(ev)
         elif self.mode == "court":
             self.court_screen.handle(ev)
+        elif self.mode == "epilogue":
+            self.epilogue_screen.handle(ev)
 
     def _draw(self):
         if self.mode == "title":
@@ -249,10 +285,12 @@ class App:
             self.battle_screen.draw(self.display)
         elif self.mode == "court":
             self.court_screen.draw(self.display)
+        elif self.mode == "epilogue":
+            self.epilogue_screen.draw(self.display)
 
 
-def dump_frames(directory, seed=C.DEFAULT_SEED):
-    """Render the four live screens into inspectable PNGs without a window."""
+def dump_frames(directory, seed=C.DEFAULT_SEED, ending="victory"):
+    """Render title, campaign, settlement, court, battle and epilogue PNGs."""
     from tbb.rules import battle as battle_rules
 
     output = Path(directory)
@@ -260,11 +298,15 @@ def dump_frames(directory, seed=C.DEFAULT_SEED):
     app = None
     try:
         app = App()
-        app.new_game(seed)
 
         def capture(name):
             pygame.display.flip()
             pygame.image.save(app.display, str(output / name))
+
+        # Capture the real title screen as part of the public smoke.
+        app._draw()
+        capture("title.png")
+        app.new_game(seed)
 
         app._draw()
         capture("campaign.png")
@@ -291,6 +333,12 @@ def dump_frames(directory, seed=C.DEFAULT_SEED):
         app.start_battle(battle)
         app._draw()
         capture("battle.png")
+
+        app.campaign.ended = True
+        app.campaign.end_reason = ending
+        app.mode = "epilogue"
+        app._draw()
+        capture("epilogue.png")
     finally:
         if app is not None:
             app.audio.music_stop()

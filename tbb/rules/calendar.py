@@ -15,11 +15,25 @@ class Calendar:
         return self.month_name()
 
     @property
+    def season(self):
+        return C.SEASON_BY_MONTH[self.month]
+
+    @property
+    def season_name(self):
+        return self.season
+
+    @staticmethod
+    def season_for_month(month):
+        if not 0 <= int(month) < C.MONTHS_PER_YEAR:
+            raise ValueError("month must be 0..12")
+        return C.SEASON_BY_MONTH[int(month)]
+
+    @property
     def weeks(self):
         return C.WEEKS_PER_MONTH
 
     def label(self):
-        return f"Year {self.year}, Month {self.month_name()}"
+        return f"Year {self.year}, Month {self.month_name()} — {self.season}"
 
     def advance(self, months=1):
         if months < 0:

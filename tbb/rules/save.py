@@ -11,19 +11,14 @@ from .parties import Party
 SCHEMA_VERSION = C.SAVE_VERSION
 
 def _unit(u):
-    wounds = [u.wound_name(wound) for wound in u.wounds]
-    wound_timers = dict(u.wound_timers)
-    # Normalize pre-string saves or callers that still append the old dict
-    # shape directly before writing the new canonical representation.
-    for wound in u.wounds:
-        months = u.wound_months(wound)
-        if months is not None:
-            wound_timers[u.wound_name(wound)] = months
+    wounds = [{"wound": u.wound_name(wound),
+               "months": u.wound_months(wound)} for wound in u.wounds]
     return {"id":u.id,"name":u.name,"realm":u.realm,"origin":u.origin,"age":u.age,
             "stats":dict(u.stats),"talents":list(u.talents),"kit":u.kit,"xp":u.xp,
             "seasoning":u.seasoning,"wounds":wounds,
-            "wound_timers":wound_timers,
-            "battle_wounds":[u.wound_name(wound) for wound in u.battle_wounds],
+            "battle_wounds":[{"wound": u.wound_name(wound),
+                              "months": u.wound_months(wound)}
+                             for wound in u.battle_wounds],
             "stun_until":u.stun_until,"alive":u.alive,"is_hero":u.is_hero,"is_heir":u.is_heir,
             "max_hit_points":u.max_hit_points,"current_hit_points":u.current_hit_points,
             "shaken":u.shaken}
@@ -34,7 +29,9 @@ def _battle(b):
             "stun_until":{str(k):v for k,v in b.stun_until.items()},"alive":{str(k):v for k,v in b.alive.items()},"ap":{str(k):v for k,v in b.ap.items()},"round":b.round,"turn_side":b.turn_side,"winner":b.winner,"log":b.log,"contact_terrain":b.contact_terrain}
 def to_state_dict(c):
     return {"version":SCHEMA_VERSION,"seed":c.seed,"calendar":c.calendar.snapshot(),"turn":c.turn,"ended":c.ended,"game_over":c.ended,"end_reason":c.end_reason,"notes":list(c.notes),"rng":list(c.rng.getstate()),
-            "world":{"width":c.world.width,"height":c.world.height,"grid":{f"{q},{r}":t for (q,r),t in c.world.grid.items()},"crossings":{f"{q},{r}":v for (q,r),v in c.world.crossings.items()}},
+            "world":{"width":c.world.width,"height":c.world.height,"grid":{f"{q},{r}":t for (q,r),t in c.world.grid.items()},"crossings":{f"{q},{r}":v for (q,r),v in c.world.crossings.items()},
+                     "regions":{name:[list(p) for p in sorted(cells)] for name,cells in c.world.regions.items()},
+                     "rivers":{name:[list(p) for p in sorted(cells)] for name,cells in c.world.rivers.items()}},
             "settlements":[h.snapshot() for h in sorted(c.settlements.values(),key=lambda x:x.id)],
             "realms":[r.snapshot() for _,r in sorted(c.realms.items())],"units":[_unit(u) for _,u in sorted(c.units.items())],
             "parties":[p.snapshot() for p in c.parties],"pending_battles":[_battle(b) for b in c.pending_battles]}
@@ -52,22 +49,33 @@ def from_state_dict(state):
     wd=state["world"]; c.world=World(wd["width"],wd["height"])
     for key,t in wd["grid"].items(): q,r=(int(x) for x in key.split(",")); c.world.set_terrain((q,r),t)
     for key,v in wd.get("crossings",{}).items(): q,r=(int(x) for x in key.split(",")); c.world.crossings[(q,r)]=v
+    for name, cells in wd.get("regions",{}).items():
+        c.world.regions[name] = {tuple(pos) for pos in cells}
+        for pos in c.world.regions[name]: c.world.region_by_hex[pos] = name
+    for name, cells in wd.get("rivers",{}).items():
+        c.world.rivers[name] = {tuple(pos) for pos in cells}
+        for pos in c.world.rivers[name]: c.world.river_by_hex[pos] = name
     c.settlements={}
     for item in state["settlements"]:
-        h=Holding(item["id"],item["name"],tuple(item["hex"]),item["size"],item.get("owner")); c.settlements[h.id]=h
+        h=Holding(item["id"],item["name"],tuple(item["hex"]),item["size"],item.get("owner"));
+        h.gold=item.get("gold", 0); h.wheat=item.get("wheat", 0)
+        h.population=int(item.get("population", C.POP_CAP[h.size] // 2));
+        h.raid_pressure=int(item.get("raid_pressure", 0)); c.settlements[h.id]=h
         for kind,meta in item.get("buildings",{}).items(): h.buildings[kind]=Building(kind,meta.get("staffed",False))
     c.units={}
     for item in state["units"]:
         u=Unit(item["id"],item["name"],stats=item["stats"],talents=item["talents"],origin=item.get("origin","the road"),age=item.get("age",18),kit=item.get("kit","light"),realm=item.get("realm"),is_hero=item.get("is_hero",False))
         u.xp=item.get("xp",0); u.seasoning=item.get("seasoning",0)
-        u.wounds=[u.wound_name(wound) for wound in item.get("wounds",[])]
+        u.wounds=[]
         u.wound_timers={str(name):int(months)
                         for name, months in item.get("wound_timers",{}).items()
                         if months is not None}
         for wound in item.get("wounds",[]):
-            if isinstance(wound, dict) and wound.get("months") is not None:
-                u.wound_timers[u.wound_name(wound)] = int(wound["months"])
-        u.battle_wounds=[u.wound_name(wound)
+            name = u.wound_name(wound)
+            months = wound.get("months") if isinstance(wound, dict) else u.wound_timers.get(name)
+            u.apply_wound(name, months)
+        u.battle_wounds=[{"wound": u.wound_name(wound),
+                          "months": u.wound_months(wound)}
                          for wound in item.get("battle_wounds",[])]
         u.stun_until=item.get("stun_until"); u.alive=item.get("alive",True)
         u.is_heir=item.get("is_heir",False); u.shaken=item.get("shaken",False)

@@ -1,4 +1,4 @@
-"""Individual-unit side-turn tactical battles on 18x13 fields.
+"""Individual-unit side-turn tactical battles on 30x20 fields.
 
 The field is painted from the overworld hex of the contact plus its campaign
 neighbours, so a forest contact reads as woods with clearings and a hill
@@ -36,7 +36,7 @@ def _weighted(rng, counts):
 
 
 def generate_field(contact_terrain, rng=None, neighbours=None):
-    """Build the shared 18x13 tactical field for every new contact.
+    """Build the shared large tactical field for every new contact.
 
     ``neighbours`` carries the campaign terrains of the contact hex's
     overworld neighbours, so clustered biomes paint clearly themed fields.
@@ -139,6 +139,11 @@ class Battle:
         self._place_units()
 
     @property
+    def prepared_assault(self):
+        """Whether this contact is a walled-holding assault, not a raid."""
+        return self.assault
+
+    @property
     def center(self):
         return (C.BATTLE_WIDTH // 2, C.BATTLE_HEIGHT // 2)
 
@@ -217,7 +222,10 @@ class Battle:
     def _defender_mod(self, target):
         cover = C.BATTLE_TERRAIN_MOD.get(self.terrain(self.position_of(target)), 0)
         shield = -C.BATTLE_DEF_PER_SHIELD if C.KITS[target.kit]["shield"] else 0
-        return cover + shield - target.stat("resolve") * C.BATTLE_DEF_PER_STAT
+        assault_cover = (-C.ASSAULT_DEFENDER_BONUS
+                         if self.assault and self.side_of.get(target.id) ==
+                         "defender" else 0)
+        return cover + shield + assault_cover - target.stat("resolve") * C.BATTLE_DEF_PER_STAT
     def hit_chance(self, attacker, target, kind="melee"):
         stat = attacker.stat("ranged" if kind == "ranged" else "melee")
         distance = G.hex_distance(self.position_of(attacker), self.position_of(target))
@@ -234,7 +242,11 @@ class Battle:
             if not self._line_clear(self.position_of(attacker), self.position_of(target)): return Result(False,"the shot is blocked")
         chance=self.hit_chance(attacker,target,kind); hit=self.campaign.rng.random() < chance; self.ap[attacker.id] -= 1
         attacker.add_combat_xp(C.XP_PARTICIPATION, self.campaign.rng)
-        if not hit: self.log.append(f"{attacker.name} misses {target.name}"); return Result(True,"miss",False,0)
+        record = {"kind": kind, "unit": attacker.id, "target": target.id,
+                  "hit": False, "reason": "miss"}
+        if not hit:
+            self.log.append(f"{attacker.name} misses {target.name}")
+            return Result(True, "miss", False, 0, [record])
         damage=(C.BATTLE_MELEE_DAMAGE if kind == "melee" else C.BATTLE_RANGED_DAMAGE) + attacker.stat("melee" if kind == "melee" else "ranged")//15
         damage=max(1, damage-C.KITS[target.kit]["armour"]); target.current_hit_points=max(0,target.current_hit_points-damage); attacker.add_combat_xp(C.XP_HIT,self.campaign.rng)
         wounds_before = len(target.wounds)
@@ -243,7 +255,8 @@ class Battle:
         else: self.log.append(f"{attacker.name} hits {target.name} for {damage}")
         self.over()
         reason = "slain" if not target.alive else ("wound" if len(target.wounds) > wounds_before else "hit")
-        return Result(True, reason, True, damage)
+        record.update(hit=True, reason=reason)
+        return Result(True, reason, True, damage, [record])
     def _wound(self, target, damage):
         if damage >= max(3, target.max_hit_points//4):
             choices=["gash","bruise","shattered arm","maimed leg","lost eye","broken ribs"]

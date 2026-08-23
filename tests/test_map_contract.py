@@ -1,4 +1,4 @@
-"""Headless contract for the generated 46x34 multi-biome overworld."""
+"""Headless contract for the generated 64x48 multi-biome overworld."""
 from tbb.rules import constants as C
 from tbb.rules import terrain as G
 from tbb.rules import pathfind
@@ -148,6 +148,6 @@ def test_campaign_terrain_constants_are_locked():
     assert G.move_cost(C.TERRAIN_MOUNTAIN, C.MOUNTAIN_PASS) == \
         C.PASS_MOVE_COST == 2
     assert G.move_cost(C.TERRAIN_RIVER, "ford") == 1
-    assert (C.BATTLE_WIDTH, C.BATTLE_HEIGHT) == (18, 13)
+    assert (C.BATTLE_WIDTH, C.BATTLE_HEIGHT) == (30, 20)
     assert C.TEMP_WOUND_MONTHS == 3
-    assert C.LONG_AXIS_MIN_MP == 20
+    assert C.LONG_AXIS_MIN_MP == 45

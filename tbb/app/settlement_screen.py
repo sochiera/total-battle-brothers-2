@@ -7,6 +7,7 @@ worker, building, or location in one short line.
 import pygame
 
 from tbb.rules import constants as C
+from tbb.rules import terrain as GEO
 from tbb.app.ui import draw_panel, draw_text, Button, SCREEN_W, SCREEN_H
 
 
@@ -165,6 +166,12 @@ class SettlementScreen:
         if any(o.kind == "develop" and o.settlement_id == self.sid
                for o in realm.orders):
             return "development is already in progress"
+        pop_gate = C.DEVELOP_POP_GATE[(holding.size, target)]
+        building_gate = C.DEVELOP_BUILDING_GATE[(holding.size, target)]
+        if holding.population < pop_gate:
+            return "needs %d local residents (has %d)" % (pop_gate, holding.population)
+        if len(holding.buildings) < building_gate:
+            return "needs %d completed buildings (has %d)" % (building_gate, len(holding.buildings))
         cost = C.DEVELOP_COST[(holding.size, target)]
         if realm.gold < cost["gold"]:
             return "need %dg gold" % cost["gold"]
@@ -234,6 +241,28 @@ class SettlementScreen:
             return "need %dg gold" % C.MARKET_BUY_GOLD
         return None
 
+    def _transfer_target(self):
+        """Choose the nearest other player holding for the local convoy."""
+        if self.campaign is None or self.sid is None:
+            return None
+        holding = self._holding()
+        candidates = [self.campaign.settlements[sid]
+                      for sid in self.campaign.player.settlement_ids
+                      if sid != self.sid and sid in self.campaign.settlements]
+        if not candidates:
+            return None
+        return min(candidates, key=lambda other: (
+            GEO.hex_distance(holding.hex, other.hex),
+            other.id)).id
+
+    def _transfer_reason(self, target_sid=None, resource="wheat"):
+        """Dry-run label for the local-market convoy shown in this panel."""
+        target_sid = target_sid or self._transfer_target()
+        if target_sid is None:
+            return "no other holding for this convoy"
+        result = self.campaign.can_transfer_goods(self.sid, target_sid, resource)
+        return None if result.ok else result.reason
+
     def _staff_reason(self, kind):
         realm = self._realm()
         if self._holding().buildings[kind].staffed:
@@ -294,6 +323,18 @@ class SettlementScreen:
                           self._with_reason("Buy %d wheat <- %d gold" %
                                              (C.MARKET_BUY_WHEAT, C.MARKET_BUY_GOLD), buy_reason),
                           self.do_buy, enabled=buy_reason is None))
+        target_sid = self._transfer_target()
+        target_name = (self.campaign.settlements[target_sid].name
+                       if target_sid is not None else "other holding")
+        for x, resource, label in ((16, "wheat", "Ship wheat"),
+                                    (356, "gold", "Ship gold")):
+            reason = self._transfer_reason(target_sid, resource)
+            out.append(Button(x, 428, 320, 28,
+                              self._with_reason("%s to %s" %
+                                                (label, target_name), reason),
+                              lambda r=resource, target=target_sid:
+                              self.do_transfer(r, target),
+                              enabled=reason is None))
 
         party = self.campaign.hero_party(realm.key)
         ids = list(party.unit_ids) if party else []
@@ -417,6 +458,10 @@ class SettlementScreen:
     def do_buy(self):
         self._do(self.campaign.convert_market(self.sid, "buy"))
 
+    def do_transfer(self, resource, target_sid=None):
+        target_sid = target_sid or self._transfer_target()
+        self._do(self.campaign.transfer_goods(self.sid, target_sid, resource))
+
     def do_found(self):
         self.app.found_mode = True
         self.app.mode = "campaign"
@@ -450,6 +495,14 @@ class SettlementScreen:
                   "Garrison cap %d    Slots %d free    morale mod %+d" %
                   (holding.garrison_cap(), holding.building_slots_free(),
                    holding.morale_effect()), 24, 84, (70, 60, 40))
+        draw_text(surface, fonts["small"],
+                  "Local stores: %d gold / %d wheat / %d residents" %
+                  (holding.gold, holding.wheat, holding.population),
+                  24, 104, (70, 60, 40))
+        draw_text(surface, fonts["small"],
+                  "Staffed Market ships %dg gold or %dw wheat to your other holdings" %
+                  (C.MARKET_TRANSFER_GOLD, C.MARKET_TRANSFER_WHEAT),
+                  24, 124, (70, 60, 40))
         for button in self._build_buttons():
             button.draw(surface, fonts["small"])
         draw_text(surface, fonts["small"], self.hint, 16, SCREEN_H - 40,

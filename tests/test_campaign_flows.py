@@ -24,7 +24,8 @@ def test_temporary_wound_mends_after_three_months_permanent_never():
     ranged_before = unit.stat("ranged")
     unit.apply_wound("gash")
     unit.apply_wound("lost eye")
-    assert all(isinstance(wound, str) for wound in unit.wounds)
+    assert all(isinstance(wound, dict) and "wound" in wound
+               and "months" in wound for wound in unit.wounds)
     assert unit.stat("melee") < melee_before
     campaign._ai_and_bandit_turn = lambda: None
     for _ in range(C.TEMP_WOUND_MONTHS):
@@ -190,6 +191,13 @@ def test_save_roundtrip_after_a_month_and_pending_battle():
     campaign.world.set_terrain(rival.hex, C.TERRAIN_PLAINS)
     battle = campaign._make_battle(party, rival)
     assert battle is not None
+    uid = battle.sides["attacker"][0]
+    battle.positions[uid] = (4, 7)
+    battle.ap[uid] = 1
+    battle.stun_until[uid] = battle.round + 2
+    battle.round = 3
+    calendar = campaign.calendar.snapshot()
+    rng_state = campaign.rng.getstate()
     path = persistence.save(campaign, "midmonth", "/tmp/tbb-tests")
     loaded = persistence.load("midmonth", "/tmp/tbb-tests")
     assert persistence.canonical(campaign) == persistence.canonical(loaded)
@@ -200,6 +208,11 @@ def test_save_roundtrip_after_a_month_and_pending_battle():
     assert resumed.canvas == original.canvas
     assert resumed.turn_side == original.turn_side
     assert resumed.positions == original.positions
+    assert resumed.ap == original.ap
+    assert resumed.stun_until == original.stun_until
+    assert resumed.round == original.round
+    assert loaded.calendar.snapshot() == calendar
+    assert loaded.rng.getstate() == rng_state
 
 
 def test_unsupported_and_corrupt_saves_raise_readable_errors(tmp_path):

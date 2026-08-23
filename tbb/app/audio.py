@@ -27,7 +27,10 @@ class AudioEngine:
         self.ok = True
         self._rand = random.Random(11)
         files = {"click": "ui_open.wav", "close": "ui_close.wav",
-                 "hit": "melee_hit.wav", "death": "death_cry.wav"}
+                 "hit": "melee_hit.wav", "death": "death_cry.wav",
+                 "bow": "bow_shot.wav", "pain": "wound_cry.wav",
+                 "hit_alt": "melee_hit_alt.wav",
+                 "death_alt": "death_cry_alt.wav"}
         fallbacks = {"click": lambda: self._click(1000),
                      "close": lambda: self._click(700),
                      "hit": self._hit, "death": self._death}
@@ -40,6 +43,8 @@ class AudioEngine:
                 except Exception:
                     pass
         for name, buffer in (("bow", self._bow()), ("pain", self._pain()),
+                             ("hit_alt", self._hit()),
+                             ("death_alt", self._death()),
                              ("cant", self._click(180))):
             try:
                 self.sounds[name] = pygame.mixer.Sound(buffer=buffer)
@@ -49,6 +54,8 @@ class AudioEngine:
         self.sounds["ui_close"] = self.sounds.get("close")
         self.sounds["melee_hit"] = self.sounds.get("hit")
         self.sounds["death_cry"] = self.sounds.get("death")
+        self.sounds["bow_shot"] = self.sounds.get("bow")
+        self.sounds["wound_cry"] = self.sounds.get("pain")
         self.sounds["open"] = self.sounds.get("click")
         try:
             self.ambient = pygame.mixer.Sound(str(ASSET_ROOT / "ambient_loop.wav"))

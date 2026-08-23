@@ -1,4 +1,4 @@
-"""Battle screen: readable 18x13 hex fight - themed terrain, each living
+"""Battle screen: readable 30x20 hex fight - themed terrain, each living
 warrior visible with kit/side, side-based turns (act with several warriors,
 then SPACE ends your side and the scripted foe answers), hit / wound / death
 feedback with lunge, projectile and flash juice."""
@@ -20,7 +20,7 @@ class BattleScreen:
         self.log = []
         self._ox = 0
         self._oy = 0
-        self.fx = []            # lunge / bolt / flash effects
+        self.fx = []            # strike / bolt / hit / wound / death effects
 
     def load(self, battle):
         self.battle = battle
@@ -104,14 +104,16 @@ class BattleScreen:
             return
         kind = record["kind"]
         if kind == "melee":
-            self.fx.append({"kind": "lunge", "unit": unit.id,
+            self.fx.append({"kind": "melee_strike", "unit": unit.id,
                             "toward": b.position_of(target), "t": 0})
         elif kind == "ranged":
             self.fx.append({"kind": "bolt", "from": b.position_of(unit),
                             "to": b.position_of(target), "t": 0})
         if record.get("hit"):
-            self.fx.append({"kind": "flash", "pos": b.position_of(target),
-                            "t": 0,
+            effect_kind = "death" if not target.alive else (
+                "wound_flash" if record.get("reason") == "wound" else "hit_flash")
+            self.fx.append({"kind": effect_kind,
+                            "pos": b.position_of(target), "t": 0,
                             "dead": not target.alive})
             if not target.alive:
                 self.app.audio.sfx("death")
@@ -208,15 +210,10 @@ class BattleScreen:
         b = self.battle
         res = b.do_melee(u, tgt) if kind == "melee" else b.do_ranged(u, tgt)
         if res.ok:
-            if kind == "melee":
-                self.fx.append({"kind": "lunge", "unit": u.id,
-                                "toward": b.position_of(tgt), "t": 0})
-            else:
-                self.fx.append({"kind": "bolt", "from": b.position_of(u),
-                                "to": b.position_of(tgt), "t": 0})
-            if res.hit:
-                self.fx.append({"kind": "flash", "pos": b.position_of(tgt),
-                                "t": 0, "dead": not tgt.alive})
+            for record in res.records or [{"kind": kind, "unit": u.id,
+                                           "target": tgt.id, "hit": res.hit,
+                                           "reason": res.reason}]:
+                self._fx_from_record(record)
         self._do(res, kind)
         self._advance_if_over()
 
@@ -249,7 +246,7 @@ class BattleScreen:
         # units
         lunge_offsets = {}
         for effect in self.fx:
-            if effect["kind"] == "lunge":
+            if effect["kind"] in ("lunge", "melee_strike"):
                 unit = b.campaign.units.get(effect["unit"])
                 if unit is None:
                     continue
@@ -290,9 +287,10 @@ class BattleScreen:
         if self.hint:
             draw_text(surf, f["small"], self.hint, 12, SCREEN_H - 60,
                       (120, 40, 30))
-        draw_text(surf, f["small"], "Round %d - %d vs %d, %s ground" % (
+        battle_kind = "prepared assault" if b.assault else "field fight / raid"
+        draw_text(surf, f["small"], "Round %d - %d vs %d, %s ground — %s" % (
             b.round, len(b.living("attacker")), len(b.living("defender")),
-            b.contact_terrain), 12, SCREEN_H - 40, (60, 60, 55))
+            b.contact_terrain, battle_kind), 12, SCREEN_H - 40, (60, 60, 55))
         for bt in self._buttons():
             bt.draw(surf, f["small"])
         if b.over():
@@ -313,11 +311,15 @@ class BattleScreen:
                 y = int(fy_ + (ty - fy_) * k)
                 pygame.draw.line(surf, (60, 40, 20), (x - 4, y), (x + 4, y), 2)
                 pygame.draw.line(surf, (210, 180, 120), (x - 3, y), (x + 2, y), 1)
-            elif effect["kind"] == "flash":
+            elif effect["kind"] in ("hit_flash", "wound_flash", "death", "flash"):
                 x, y = self._hex(effect["pos"])
-                if effect.get("dead"):
+                if effect["kind"] == "death" or effect.get("dead"):
                     radius = int(6 + 14 * k)
                     pygame.draw.circle(surf, (200, 30, 20), (x, y),
+                                       radius, 3)
+                elif effect["kind"] == "wound_flash":
+                    radius = int(5 + 10 * k)
+                    pygame.draw.circle(surf, (250, 170, 45), (x, y),
                                        radius, 3)
                 else:
                     radius = int(4 + 8 * k)

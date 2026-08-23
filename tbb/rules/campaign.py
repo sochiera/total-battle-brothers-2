@@ -44,7 +44,8 @@ class Campaign:
     def _new_id(self, values):
         return max(values, default=0) + 1
     def _fresh_mp(self, party):
-        points = C.CAMPAIGN_MOVEMENT_POINTS
+        points = max(1, C.CAMPAIGN_MOVEMENT_POINTS -
+                     C.SEASON_MARCH_COST[self.calendar.season])
         on_road = self.world.terrain(party.hex) == C.TERRAIN_ROAD
         party.road_bonus = on_road
         if on_road:
@@ -281,6 +282,12 @@ class Campaign:
         if any(order.kind == "develop" and order.settlement_id == sid
                for order in realm.orders):
             return Check(False, "development is already in progress")
+        pop_gate = C.DEVELOP_POP_GATE[(holding.size, target)]
+        building_gate = C.DEVELOP_BUILDING_GATE[(holding.size, target)]
+        if holding.population < pop_gate:
+            return Check(False, f"needs {pop_gate} local residents (has {holding.population})")
+        if len(holding.buildings) < building_gate:
+            return Check(False, f"needs {building_gate} completed buildings (has {len(holding.buildings)})")
         cost = C.DEVELOP_COST[(holding.size, target)]
         if realm.gold < cost["gold"]:
             return Check(False, "not enough gold")
@@ -427,6 +434,59 @@ class Campaign:
             return Check(False, "trade direction must be sell or buy")
         return Check(True)
 
+    def transfer_goods(self, source_sid, target_sid, resource, dry_run=False):
+        """Move a fixed convoy between two owned holdings with markets."""
+        source = self.settlements.get(source_sid)
+        target = self.settlements.get(target_sid)
+        if source is None or target is None:
+            return Check(False, "both holdings must exist")
+        if source.owner != self.player.key or target.owner != self.player.key:
+            return Check(False, "both holdings must belong to your realm")
+        if not source.has(C.BUILDING_MARKET):
+            return Check(False, "a staffed market is required at the shipping holding")
+        if GEO.hex_distance(source.hex, target.hex) > C.MARKET_TRANSFER_RANGE:
+            return Check(False, "the market convoy cannot reach that far")
+        if resource == "wheat":
+            amount = C.MARKET_TRANSFER_WHEAT
+            if source.wheat < amount:
+                return Check(False, "the shipping holding lacks wheat")
+        elif resource == "gold":
+            amount = C.MARKET_TRANSFER_GOLD
+            if source.gold < amount:
+                return Check(False, "the shipping holding lacks gold")
+        else:
+            return Check(False, "ship wheat or gold")
+        if not dry_run:
+            if resource == "wheat":
+                source.wheat -= amount; target.wheat += amount
+            else:
+                source.gold -= amount; target.gold += amount
+        return Check(True, f"shipped {amount} {resource} from {source.name} to {target.name}")
+
+    def can_transfer_goods(self, source_sid, target_sid, resource):
+        return self.transfer_goods(source_sid, target_sid, resource, dry_run=True)
+
+    def market_transfer(self, source_sid, target_sid, resource, dry_run=False):
+        return self.transfer_goods(source_sid, target_sid, resource, dry_run)
+
+    def raid_settlement(self, sid, raider_realm=None):
+        holding = self.settlements.get(sid)
+        if holding is None or holding.owner is None:
+            return Check(False, "there is no stocked holding to raid")
+        realm = self.realms.get(holding.owner)
+        stolen_w = min(C.RAID_SACK_WHEAT, int(holding.wheat))
+        stolen_g = min(C.RAID_SACK_GOLD, int(holding.gold))
+        holding.wheat -= stolen_w; holding.gold -= stolen_g
+        holding.population = max(0, holding.population - C.RAID_POP_CUT)
+        if realm:
+            realm.wheat = max(0, realm.wheat - stolen_w)
+            realm.gold = max(0, realm.gold - stolen_g)
+        self.notes.append(f"{holding.name} is raided: -{stolen_w} wheat, -{stolen_g} gold, -{C.RAID_POP_CUT} people")
+        return Check(True, "raid sacks stores without annexing the holding")
+
+    def raid(self, sid, raider_realm=None):
+        return self.raid_settlement(sid, raider_realm)
+
     def designate_heir(self, uid=None):
         realm = self.player
         if uid is not None:
@@ -475,8 +535,9 @@ class Campaign:
     def _account(self, realm):
         holdings = realm.holdings(self.settlements)
         capacity = realm.holdings_cap(self.settlements)
+        multiplier = C.SEASON_WHEAT_MULTIPLIER[self.calendar.season]
         produced = sum(holding.food_produced(self._local_population(realm, holding))
-                       for holding in holdings)
+                       for holding in holdings) * multiplier
         living = len(realm.living_units(self.units))
         food_need = (realm.population * C.POP_FOOD_PER_MONTH +
                      living * C.WARRIOR_FOOD_UPKEEP)
@@ -552,7 +613,12 @@ class Campaign:
             if allowed:
                 party.add(unit.id)
         elif order.kind == "develop":
-            self.settlements[order.settlement_id].size = order.kind_data
+            holding = self.settlements[order.settlement_id]
+            holding.size = order.kind_data
+            holding.population = max(holding.population,
+                                    C.DEVELOP_POP_GATE.get(
+                                        (C.SIZE_ORDER[C.SIZE_ORDER.index(order.kind_data)-1],
+                                         order.kind_data), holding.population))
         elif order.kind == "found":
             names = {holding.name for holding in self.settlements.values()}
             holding = Holding(self._new_sid(), N.unique_settlement_name(self.rng, names),
@@ -643,7 +709,11 @@ class Campaign:
     def _scan_contacts_for(self, party):
         h = self.settlement_at(party.hex)
         if h and party.kind == "hero" and h.owner != party.realm:
-            self._start_assault(party, self.garrison_party(h.id), h.id)
+            prepared = h.size in (C.SIZE_T, C.SIZE_C) and (
+                h.size == C.SIZE_C or C.BUILDING_WALLS in h.buildings or
+                C.BUILDING_KEEP in h.buildings)
+            self._start_assault(party, self.garrison_party(h.id), h.id,
+                                prepared)
         elif h and party.kind == "bandit":
             if h.owner is not None:
                 self._bandit_raid(party, h.id)
@@ -656,22 +726,43 @@ class Campaign:
                                 for i in guard.unit_ids
                                 if self.units[i].alive) if guard else 0
                 if guard and guard.unit_ids and raiders > defenders:
-                    self._make_battle(party, guard, True)
+                    self._make_battle(party, guard, False)
         for other in self.parties:
             if (other.pid != party.pid and other.kind != "garrison" and
                     other.hex == party.hex and
                     self._parties_hostile(party, other)):
                 self._make_battle(party, other, False)
 
+    def undefended_road_hexes(self):
+        """Count road tiles without a living roadside garrison."""
+        guarded = set()
+        for holding in self.settlements.values():
+            guard = self.garrison_party(holding.id)
+            if guard and any(self.units[uid].alive for uid in guard.unit_ids):
+                guarded.update((holding.hex, *self.world.neighbours(holding.hex)))
+        return sum(1 for pos, terrain in self.world.grid.items()
+                   if terrain == C.TERRAIN_ROAD and pos not in guarded)
+
+    def bandit_pressure(self):
+        return (self.undefended_road_hexes() // C.UNDEFENDED_ROAD_RAID_STEP
+                + C.SEASON_RAID_PRESSURE[self.calendar.season])
+
     def _bandit_raid(self, party, sid):
         realm = self._realm_of_settlement(sid)
         if realm is None:
             return
-        stolen_w = min(6, int(realm.wheat))
-        stolen_g = min(4, int(realm.gold))
-        realm.wheat -= stolen_w
-        realm.gold -= stolen_g
-        self.notes.append(f"robbers sack {self.settlements[sid].name}: -{stolen_w} wheat, -{stolen_g} gold")
+        holding = self.settlements[sid]
+        pressure = self.bandit_pressure()
+        stolen_w = min(C.RAID_SACK_WHEAT + pressure,
+                       int(holding.wheat or realm.wheat))
+        stolen_g = min(C.RAID_SACK_GOLD + pressure,
+                       int(holding.gold or realm.gold))
+        holding.wheat = max(0, holding.wheat - stolen_w)
+        holding.gold = max(0, holding.gold - stolen_g)
+        holding.population = max(0, holding.population - C.RAID_POP_CUT)
+        realm.wheat = max(0, realm.wheat - stolen_w)
+        realm.gold = max(0, realm.gold - stolen_g)
+        self.notes.append(f"robbers sack {holding.name}: -{stolen_w} wheat, -{stolen_g} gold, -{C.RAID_POP_CUT} people")
         guard = self.garrison_party(sid)
         if guard and guard.unit_ids:
             raiders = sum(self.units[i].stat("melee") for i in party.unit_ids
@@ -679,11 +770,11 @@ class Campaign:
             defenders = sum(self.units[i].stat("melee") for i in guard.unit_ids
                             if self.units[i].alive)
             if raiders > defenders:
-                self._make_battle(party, guard, True)
+                self._make_battle(party, guard, False)
 
-    def _start_assault(self, attacker, guard, sid):
+    def _start_assault(self, attacker, guard, sid, prepared=False):
         if guard and guard.unit_ids:
-            self._make_battle(attacker, guard, True)
+            self._make_battle(attacker, guard, prepared)
         else:
             self._conquer(sid, attacker.realm)
 
@@ -737,14 +828,16 @@ class Campaign:
         for realm in self.realms.values():
             hero = self.units.get(realm.hero) if realm.hero is not None else None
             heir = self.units.get(realm.heir) if realm.heir is not None else None
-            no_holdings = not realm.settlement_ids
+            no_holdings = (not realm.settlement_ids or
+                           not realm.can_raise_hero(self.settlements))
             no_line = not (hero and hero.alive) and not (heir and heir.alive)
             if no_holdings and no_line:
                 realm.destroyed = True
         if self.player.destroyed:
             self.ended = True
             self.end_reason = "defeat"
-        elif all(realm.destroyed for key, realm in self.realms.items()
+        elif all(realm.destroyed or not realm.settlement_ids
+                 for key, realm in self.realms.items()
                  if key != self.player.key):
             self.ended = True
             self.end_reason = "victory"
@@ -768,6 +861,10 @@ class Campaign:
     @property
     def height(self):
         return self.world.height
+
+    @property
+    def season(self):
+        return self.calendar.season
 
     def morale_bonus(self, realm):
         return self.realms[realm].morale

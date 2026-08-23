@@ -16,15 +16,18 @@ in `tbb/rules` with zero pygame imports.
 ## Requirements and launch
 
 Ubuntu 26.04 (or another Linux with Python 3.10+) is required. `run.sh`
-creates `.venv` and installs pygame-ce and pytest on its first run:
+tries a normal `.venv`, then a `--without-pip` venv and `pip3 --python .venv`.
+If this host has no `ensurepip`, it can use system `python3` when the needed
+imports already exist; the chosen interpreter is printed:
 
 ```sh
 ./run.sh
 ```
 
-Equivalent commands are `make run` and `.venv/bin/python3 -m tbb`. If the
-machine cannot run `ensurepip`, both `run.sh` and the Makefile retry with a
-`--without-pip` virtualenv and install through `pip3 --python`.
+Equivalent commands are `make run` and `.venv/bin/python3 -m tbb` after a
+successful bootstrap. The fallback never calls `python`; it puts the repo on
+`PYTHONPATH`. UI tests and display smokes are unavailable until pygame can
+import; rules tests still run with system `python3` and pytest.
 The title screen offers New / Load / Quit, a typed seed (empty falls back to 734102)
 and a **Generate** button that fills a fresh numeric seed you can still edit;
 Enter starts. A seed can also be supplied with `--seed 734102`; `--new-game`
@@ -45,8 +48,8 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run.sh \
   --seed 734102 --new-game --frames 45
 ```
 
-To inspect the live happy path without a display, render all four main screens
-to PNG files:
+To inspect the live happy path without a display, render the title, campaign,
+settlement, court, battle, and a forced victory epilogue to PNG files:
 
 ```sh
 SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run.sh \
@@ -55,7 +58,12 @@ test -s /tmp/tbb-frames/campaign.png
 test -s /tmp/tbb-frames/settlement.png
 test -s /tmp/tbb-frames/court.png
 test -s /tmp/tbb-frames/battle.png
+test -s /tmp/tbb-frames/title.png
+test -s /tmp/tbb-frames/epilogue.png
 ```
+
+Use `--ending defeat` (or `--force-ending defeat`) to capture the defeat
+epilogue instead of the default victory example.
 
 For a display-free save check, use the rules-only CLI path:
 
@@ -66,15 +74,16 @@ test -s saves/plan-smoke.tbb
 
 ## What works
 
-Each campaign contains a **46×34** painted hex world of clustered biomes:
+Each campaign contains a **64×48** painted hex world of clustered biomes:
 plains, forest, hills, a coast strip on one edge, marsh, farmland, rivers
 with fords and bridges, roads, and a **mountain spine** that blocks travel
-except through generated **passes**. Crossing the long axis costs at least 20
+except through generated **passes**. Crossing the long axis costs at least 45
 movement points, so the world takes months to cross. The world holds **one
 player duchy plus five AI duchies**, 4–8 neutral holdings, empty land, and
 exactly **three robber bands** camped on or beside ruins. The player starts
 as either a border count with one village or a minor duke with two or three
-village/town holdings.
+village/town holdings; the documented 734102 family includes city art and a
+city holding.
 
 One turn is one month. A year has **thirteen four-week months** labelled
 I–XIII. A company has at most **12 named people including its living hero**.
@@ -110,7 +119,11 @@ armour, and Two-hander. Heavy armour and Two-hander require a staffed
 Smithy; Bow requires a staffed Fletcher (no smithy, no heavy plate).
 Recruiting costs 10 gold, 2 wheat, one month, and one population. Founding
 costs 50 gold, 15 wheat, three months, and two settlers. Village→Town costs
-80 gold/20 wheat/four months; Town→City costs 180 gold/45 wheat/seven months.
+80 gold/20 wheat/four months plus population/building gates; Town→City costs
+180 gold/45 wheat/seven months plus larger gates. Seasons affect harvest
+yield, winter movement and raid pressure. Staffed markets ship wheat or gold
+between owned holdings. Raids sack stores and residents without annexing;
+walled town/city contacts are prepared assaults.
 
 AI rivals staff their buildings, build by a fixed priority list, recruit,
 train, outfit, **found new villages on legal adjacent land**, and march on
@@ -119,7 +132,7 @@ weaker guards, never with each other.
 
 ### Battles
 
-A hostile contact or settlement assault opens an individual-unit **18×13**
+A hostile contact or settlement assault opens an individual-unit **30×20**
 hex battle painted from the overworld hex and its neighbours, so forest
 fights are mostly woods with clearings, hills show ridges, river contacts
 keep a water band with fords, and farmland, marsh, coast, mountain-pass,
@@ -135,12 +148,12 @@ capture, and succession.
 
 ### End states
 
-Court designates or clears an heir. A dead hero with a living heir continues
+Court designates or clears an heir; a living default heir is assigned at start. A dead hero with a living heir continues
 with the locked morale hit (-20, shaken resolve cap for the company); with no
 heir but a town/city the council raises a new commander (-15); no settlements
 plus no living hero and no heir is defeat; being the last ruling duchy is
-victory. Banners on the campaign map and the Court chronicle make these
-visible without reading logs.
+victory. Banners on the campaign map, the Court chronicle, and a dedicated
+full-window Victory/Defeat epilogue make these visible without reading logs.
 
 ### Save/load
 
@@ -162,7 +175,7 @@ population, morale, the selected-settlement card, company roster, robber
 bands, and the realm chronicle. In battle, click a unit then an adjacent hex
 or hostile unit; `Space` ends your side's turn and `A` auto-resolves. The
 settlement screen offers building, staffing, recruiting, training, equipping,
-market trade, development, and **garrison transfer** (attach garrison
+market trade, **Ship wheat**, **Ship gold**, development, and **garrison transfer** (attach garrison
 soldiers to the company up to 12, detach non-heroes into the garrison up to
 its cap), each with a reason shown when disabled. UI open/close, melee hit,
 bow, wound, and death-cry sounds plus looping ambient music are always on
@@ -186,15 +199,11 @@ orders.
 
 Rules are in `tbb/rules` and import no pygame (a source-scan test locks
 this); presentation is in `tbb/app`; original art/audio live in `assets/`.
-Run `make test` for the 70 headless tests, the `--save-smoke` command above
-for a real JSON slot, the dummy `--frames`
+Run `make test` for the checked-in suite (pytest reports the exact count), the
+`--save-smoke` command above for a real JSON slot, the dummy `--frames`
 command above for a launch smoke check, and dummy `--dump-frames` to inspect
-the four display-free screens. The checked-in suite covers start layouts and
-names, the multi-biome worldgen contract (every biome present, mountain
-walls, passes, ≥20 MP long axis, capital spacing, camps), staffed economy,
-population carry, movement and pass gates, AI orders and founding, talents,
-18×13 battle fields, side-based turns and the scripted foe, wound expiry,
-battle writeback and capture, garrison transfer, succession, victory/defeat,
-save/load roundtrips including mid-battle, art files, frame dumping, and
-pygame isolation. Last verification: 70 tests passed, the 45-frame dummy SDL
-smoke, the save smoke, and the four-screen dump all completed successfully.
+the title, campaign, settlement, court, battle, and epilogue screens. The
+suite covers multi-seed worldgen, seasons, development, trade, raids,
+individual-unit 30×20 battles, wounds, succession, endings, save/load,
+presentation assets, frame dumping, and pygame isolation. Validation output
+is the test evidence; the documentation does not assume a fixed test count.

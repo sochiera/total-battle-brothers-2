@@ -75,6 +75,10 @@ def terrain_sprites():
         C.TERRAIN_MARSH: lambda: marsh_tile(11),
         C.TERRAIN_FARMLAND: lambda: farmland_tile(12),
         C.TERRAIN_COAST: lambda: coast_tile(13),
+        C.TERRAIN_FORD: lambda: crossing_tile(15, "ford"),
+        C.TERRAIN_HIGHLAND_FARM: lambda: highland_farm_tile(16),
+        C.TERRAIN_FOREST_TRACK: lambda: forest_track_tile(17),
+        C.TERRAIN_RUINED_HOLD: lambda: ruined_hold_tile(18),
     }
     for terrain, fallback in fallbacks.items():
         sp[terrain] = _png("tiles/%s.png" % terrain, fallback)
@@ -244,6 +248,33 @@ def farmland_tile(seed):
         px_, py = rng.randint(2, 21), rng.choice((2, 21))
         _px(s, px_, py, (92, 70, 44))
         _px(s, px_, py - 1, (110, 84, 52))
+    return s
+
+
+def highland_farm_tile(seed):
+    s = hill_tile(seed)
+    for y in range(7, 21, 4):
+        for x in range(3, 21):
+            if (x + y) % 3:
+                _px(s, x, y, (176, 145, 66))
+    return s
+
+
+def forest_track_tile(seed):
+    s = woods_tile(seed)
+    for y in range(24):
+        for x in range(10, 14):
+            _px(s, x, y, (126, 91, 56) if (x + y) % 3 else (98, 70, 48))
+    return s
+
+
+def ruined_hold_tile(seed):
+    s = ruins_tile(seed)
+    for y in range(5, 17):
+        _px(s, 5, y, (74, 62, 50)); _px(s, 18, y, (74, 62, 50))
+    for x in range(5, 19):
+        if x % 2:
+            _px(s, x, 5, (74, 62, 50))
     return s
 
 

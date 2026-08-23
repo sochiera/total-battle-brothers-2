@@ -6,6 +6,10 @@ class World:
         self.width, self.height = width, height
         self.grid = {}
         self.crossings = {}  # river hex -> ford or bridge
+        self.regions = {}  # region name -> hexes
+        self.region_by_hex = {}
+        self.rivers = {}  # river name -> hexes
+        self.river_by_hex = {}
 
     def in_bounds(self, pos):
         q, r = pos
@@ -43,6 +47,20 @@ class World:
 
     def all_hexes(self):
         return list(self.grid)
+
+    def region_at(self, pos):
+        return self.region_by_hex.get(tuple(pos))
+
+    def river_at(self, pos):
+        return self.river_by_hex.get(tuple(pos))
+
+    @property
+    def region_names(self):
+        return tuple(self.regions)
+
+    @property
+    def river_names(self):
+        return tuple(self.rivers)
 
     def hex_count(self):
         return len(self.grid)

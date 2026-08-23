@@ -146,6 +146,10 @@ def _develop(campaign, realm):
         if index + 1 >= len(C.SIZE_ORDER):
             continue
         target = C.SIZE_ORDER[index + 1]
+        if holding.population < C.DEVELOP_POP_GATE[(holding.size, target)]:
+            continue
+        if len(holding.buildings) < C.DEVELOP_BUILDING_GATE[(holding.size, target)]:
+            continue
         cost = C.DEVELOP_COST[(holding.size, target)]
         if realm.gold >= cost["gold"] and realm.wheat >= cost["wheat"]:
             realm.gold -= cost["gold"]

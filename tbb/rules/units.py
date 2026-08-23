@@ -25,9 +25,9 @@ class Unit:
         self.xp = 0
         self.seasoning = 0
         self.wounds = []
-        # Wound names stay strings for old callers and save files.  Temporary
-        # durations live beside them so the UI and succession code can use a
-        # simple list while persistence still keeps the countdown.
+        # Wounds are structured in memory as well as in save v3.  The helper
+        # methods below still accept the old string shape for migration and
+        # for small headless fixtures.
         self.wound_timers = {}
         self.battle_wounds = []
         self.stun_until = None
@@ -77,8 +77,14 @@ class Unit:
             months = wound.get("months")
         if months is None and C.WOUNDS.get(name) == "temporary":
             months = C.TEMP_WOUND_MONTHS
-        if name not in self.wounds:
-            self.wounds.append(name)
+        entry = next((value for value in self.wounds
+                      if self.wound_name(value) == name), None)
+        if entry is None:
+            entry = {"wound": name, "months":
+                     int(months) if months is not None else None}
+            self.wounds.append(entry)
+        elif months is not None:
+            entry["months"] = int(months)
         if months is not None:
             self.wound_timers[name] = int(months)
         return name

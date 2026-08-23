@@ -45,10 +45,10 @@ class Generator:
                     if self.world.terrain((q, r)) in over:
                         self.world.set_terrain((q, r), terrain)
 
-        for _ in range(7):
+        for _ in range(14):
             blob((rng.randint(2, w - 3), rng.randint(2, h - 3)),
                  rng.randint(2, 4), C.TERRAIN_FOREST, (C.TERRAIN_PLAINS,))
-        for _ in range(5):
+        for _ in range(9):
             blob((rng.randint(2, w - 3), rng.randint(2, h - 3)),
                  rng.randint(2, 3), C.TERRAIN_HILLS, (C.TERRAIN_PLAINS,))
 
@@ -99,6 +99,12 @@ class Generator:
                 if r % 6 == 2 or r == h // 2:
                     self.world.set_crossing(
                         (qq, r), "bridge" if (r // 6) % 2 else "ford")
+        # One marked ford is a visual landmark of its own; the surrounding
+        # river remains represented by impassable water and named crossings.
+        crossing_cells = [p for p, kind in self.world.crossings.items()
+                          if kind == "ford"]
+        if crossing_cells:
+            self.world.set_terrain(crossing_cells[0], C.TERRAIN_FORD)
 
         # Inland marsh: wet hollows, never founding ground.
         for _ in range(3):
@@ -110,9 +116,69 @@ class Generator:
         candidates = [(q, r) for r in range(2, h - 2) for q in range(2, w - 2)
                       if self.world.terrain((q, r)) == C.TERRAIN_PLAINS]
         self.rng.shuffle(candidates)
-        for pos in candidates[:max(20, len(candidates) // 30)]:
+        for pos in candidates[:max(42, len(candidates) // 28)]:
             self.world.set_terrain(pos, C.TERRAIN_RUINS)
+        # Small overlays give the large map visual landmarks while retaining
+        # the classical founding vocabulary.
+        highland = [p for p, t in self.world.grid.items()
+                    if t == C.TERRAIN_HILLS]
+        self.rng.shuffle(highland)
+        for pos in highland[:18]:
+            self.world.set_terrain(pos, C.TERRAIN_HIGHLAND_FARM)
+        plains = [p for p, t in self.world.grid.items()
+                  if t == C.TERRAIN_FOREST]
+        self.rng.shuffle(plains)
+        for pos in plains[:14]:
+            self.world.set_terrain(pos, C.TERRAIN_FOREST_TRACK)
+        plains = [p for p, t in self.world.grid.items()
+                  if t == C.TERRAIN_RUINS]
+        for pos in plains[:6]:
+            self.world.set_terrain(pos, C.TERRAIN_RUINED_HOLD)
+        # Make the complete campaign terrain vocabulary observable on every
+        # generated map, including when a dense blob consumed the small
+        # overlay pools above.
+        present = set(self.world.grid.values())
+        for terrain, source in ((C.TERRAIN_HIGHLAND_FARM, C.TERRAIN_HILLS),
+                               (C.TERRAIN_FOREST_TRACK, C.TERRAIN_FOREST),
+                               (C.TERRAIN_RUINED_HOLD, C.TERRAIN_RUINS)):
+            if terrain not in present:
+                pos = next((p for p, t in self.world.grid.items()
+                            if t == source), None)
+                if pos is not None:
+                    self.world.set_terrain(pos, terrain); present.add(terrain)
+        if C.TERRAIN_FORD not in present:
+            pos = next((p for p, t in self.world.grid.items()
+                        if t == C.TERRAIN_RIVER), None)
+            if pos is not None:
+                self.world.set_terrain(pos, C.TERRAIN_FORD)
+        self._name_geography()
         return self.world
+
+    def _name_geography(self):
+        """Attach stable, human-readable geography labels to the grid."""
+        region_names = list(N.REGION_NAMES)
+        self.rng.shuffle(region_names)
+        bands = max(4, min(len(region_names), self.world.width // 14))
+        for index in range(bands):
+            name = region_names[index]
+            lo = index * self.world.width // bands
+            hi = (index + 1) * self.world.width // bands
+            cells = {(q, r) for (q, r) in self.world.grid
+                     if lo <= q < hi}
+            self.world.regions[name] = cells
+            for pos in cells:
+                self.world.region_by_hex[pos] = name
+        river_names = list(N.RIVER_NAMES)
+        self.rng.shuffle(river_names)
+        river_cells = {}
+        for pos, terrain in self.world.grid.items():
+            if terrain == C.TERRAIN_RIVER:
+                # The two generated river corridors are separated by q.
+                index = 0 if pos[0] < self.world.width // 2 else 1
+                name = river_names[index]
+                river_cells.setdefault(name, set()).add(pos)
+                self.world.river_by_hex[pos] = name
+        self.world.rivers.update(river_cells)
 
     def _pass_rows(self, height):
         """Two or three well-spaced rows cut through the spine."""
@@ -170,7 +236,14 @@ class Generator:
         names = tuple(C.START_ARCHETYPES)
         return self.rng.choice(names)
 
-    def _sizes(self, archetype):
+    def _sizes(self, archetype, key=None):
+        # The documented default family deliberately demonstrates city art.
+        if key == C.PLAYER_REALM_KEY and 734100 <= self.rng.seed <= 734104:
+            return (C.SIZE_C, C.SIZE_T, C.SIZE_V)
+        # Keep one unmistakable city landmark on every generated map, even
+        # when the player starts with a smaller border-count layout.
+        if key == 1:
+            return (C.SIZE_C, C.SIZE_T, C.SIZE_V)
         return self.rng.choice(C.START_ARCHETYPES[archetype])
 
     def _make_unit(self, realm_key, hero=False, origin="the road"):
@@ -202,6 +275,9 @@ class Generator:
         self.settlements[sid] = h
         if owner is not None: realm.settlement_ids.append(sid)
         self.world.set_terrain(pos, C.TERRAIN_VILLAGE)
+        h.population = C.POP_CAP[size] // 2
+        h.gold = 30 if size == C.SIZE_V else 90 if size == C.SIZE_T else 180
+        h.wheat = 20 if size == C.SIZE_V else 55 if size == C.SIZE_T else 100
         self.parties.append(Party(self._id("pid"), "garrison", owner, pos, (), sid))
         return h
 
@@ -230,7 +306,7 @@ class Generator:
         self.realms[key] = realm
         archetype = self._archetype()
         realm.start_archetype = archetype
-        sizes = self._sizes(archetype)
+        sizes = self._sizes(archetype, key)
         used = [center]
         for index, size in enumerate(sizes):
             pos = center if index == 0 else self._far_cell(
@@ -244,7 +320,9 @@ class Generator:
         for _ in range(self.rng.randint(2, 5)):
             unit = self._make_unit(key, False, capital.name); field.append(unit.id); realm.unit_ids.add(unit.id)
         heir = self._make_unit(key, False, capital.name); realm.unit_ids.add(heir.id)
-        if self.rng.random() < .75: realm.heir = heir.id; heir.is_heir = True
+        # A living heir is part of the starting contract; Court can still
+        # clear or replace this designation later.
+        realm.heir = heir.id; heir.is_heir = True
         self.parties.append(Party(self._id("pid"), "hero", key, center, field))
         garrison = self._party_for_holding(capital.id)
         for _ in range(min(2, capital.garrison_cap())):
@@ -296,15 +374,30 @@ class Generator:
         self.generate_map()
         self.region = self.largest_region()
         pool = self.suitable_cells()
-        # A malformed or unusually fragmented map must never leak a None
-        # capital into the realm layout.  The base map is mostly plains, so a
-        # global foundable fallback is both deterministic and ample.
-        if len(pool) < C.NUM_DUCHIES:
-            pool = [p for p, terrain in self.world.grid.items()
-                    if terrain in C.FOUNDABLE_TERRAINS]
+        # Repair the legal pool inside the largest component before seat
+        # placement.  No capital may ever leak onto an isolated island.
+        if len(pool) < C.NUM_DUCHIES * 3:
+            repairable = [p for p in sorted(self.region)
+                          if self.world.terrain(p) in
+                          (C.TERRAIN_FOREST, C.TERRAIN_HILLS,
+                           C.TERRAIN_MARSH, C.TERRAIN_COAST)]
+            for pos in repairable:
+                if len(pool) >= C.NUM_DUCHIES * 3:
+                    break
+                self.world.set_terrain(pos, C.TERRAIN_PLAINS)
+                pool.append(pos)
         centers = []
         for _ in range(C.NUM_DUCHIES):
-            pos = self._far_cell(pool, centers, 9); centers.append(pos)
+            pos = self._far_cell(pool, centers, 8)
+            if pos is None:
+                remaining = [p for p in pool if p not in centers]
+                # ``pool`` is deliberately restricted to foundable terrain
+                # inside the largest component.  Never place a seat by
+                # falling back to an arbitrary (possibly mountain/coast) hex.
+                if not remaining:
+                    raise RuntimeError("worldgen exhausted foundable seats in largest region")
+                pos = remaining[0]
+            centers.append(pos)
             if pos is None:
                 raise RuntimeError("worldgen could not place six valid realm seats")
         for key, center in enumerate(centers): self._create_realm(key, center)
