@@ -40,6 +40,10 @@ class CampaignScreen:
         self.selected_sid = (campaign.player.settlement_ids or [None])[0]
         self.anims = []
 
+    def hud_caption(self):
+        """Stable HUD text contract: month and season travel together."""
+        return self.campaign.calendar.label()
+
     def _build_map(self):
         cmap = self.campaign
         w, h = cmap.world.width, cmap.world.height
@@ -202,6 +206,8 @@ class CampaignScreen:
         self.campaign.auto_resolve_pending()
         self.hint = "Pending battle auto-resolved"
         self.app.audio.sfx("close")
+        if self.campaign.ended:
+            self.app.show_epilogue()
 
     def _button_build(self):
         self._buttons = self._make_buttons()
@@ -279,9 +285,6 @@ class CampaignScreen:
     def visible_bandit_pids(self):
         """IDs presented on the map, useful to the UI and smoke tests."""
         return [p.pid for p in self.bandit_parties()]
-
-    def _world_visible(self, hexpos):
-        return True
 
     # ---------------------------------------------------------------- draw
     def draw(self, surf):
@@ -386,8 +389,11 @@ class CampaignScreen:
                         surf, (90, 200, 90) if party.mp else (120, 110, 90),
                         [(mx - 9, my), (mx + 9, my), (mx, my - 11)], 2)
         if self.campaign.pending_battles:
+            battle_kind = self.campaign.pending_battles[0].contact_kind.replace(
+                "_", " ")
             draw_text(surf, self.app.fonts["med"],
-                      "A BATTLE WAITS - press B", 24, 48, (200, 40, 22))
+                      "A BATTLE WAITS - %s - press B" % battle_kind,
+                      24, 48, (200, 40, 22))
 
     def _panel(self, surf):
         c = self.campaign
@@ -397,7 +403,7 @@ class CampaignScreen:
         if pl is None:
             return
         draw_text(surf, f["big"], pl.name.split(" of ")[0], x, 6, (40, 26, 14))
-        draw_text(surf, f["small"], c.calendar.label(), x, 42, (80, 60, 30))
+        draw_text(surf, f["small"], self.hud_caption(), x, 42, (80, 60, 30))
         # The resource strip is reserved below the complete button row.  The
         # settlement card starts after it, so the chrome remains readable at
         # every selection state.

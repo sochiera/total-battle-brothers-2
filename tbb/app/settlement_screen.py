@@ -16,6 +16,8 @@ def _f(value):
 
 
 class SettlementScreen:
+    SHIP_Y = 424
+    TRAIN_Y = 462
     HUMAN_BUILDINGS = {
         "farm": "Farm", "granary": "Granary", "market": "Market",
         "militia_hall": "Militia Hall", "drill_yard": "Drill Yard",
@@ -248,7 +250,10 @@ class SettlementScreen:
         holding = self._holding()
         candidates = [self.campaign.settlements[sid]
                       for sid in self.campaign.player.settlement_ids
-                      if sid != self.sid and sid in self.campaign.settlements]
+                      if sid != self.sid and sid in self.campaign.settlements
+                      and 0 < GEO.hex_distance(holding.hex,
+                                               self.campaign.settlements[sid].hex)
+                      <= C.MARKET_TRANSFER_RANGE]
         if not candidates:
             return None
         return min(candidates, key=lambda other: (
@@ -262,6 +267,16 @@ class SettlementScreen:
             return "no other holding for this convoy"
         result = self.campaign.can_transfer_goods(self.sid, target_sid, resource)
         return None if result.ok else result.reason
+
+    def layout_contract(self):
+        """Hit-test geometry for the lower economy and company controls."""
+        return {
+            "ship": [pygame.Rect(x, self.SHIP_Y, 320, 28)
+                     for x in (16, 356)],
+            "train": [pygame.Rect(16, self.TRAIN_Y + row * 30, 300, 26)
+                      for row in range(6)],
+            "develop": pygame.Rect(16, 356, 320, 28),
+        }
 
     def _staff_reason(self, kind):
         realm = self._realm()
@@ -329,7 +344,7 @@ class SettlementScreen:
         for x, resource, label in ((16, "wheat", "Ship wheat"),
                                     (356, "gold", "Ship gold")):
             reason = self._transfer_reason(target_sid, resource)
-            out.append(Button(x, 428, 320, 28,
+            out.append(Button(x, self.SHIP_Y, 320, 28,
                               self._with_reason("%s to %s" %
                                                 (label, target_name), reason),
                               lambda r=resource, target=target_sid:
@@ -343,7 +358,7 @@ class SettlementScreen:
             unit = self.campaign.units.get(uid)
             if unit is None or not unit.alive:
                 continue
-            y = 450 + index * 30
+            y = self.TRAIN_Y + index * 30
             train_reason = self._train_reason(uid)
             out.append(Button(16, y, 300, 26,
                               self._with_reason("Train " + unit.name, train_reason),

@@ -331,6 +331,14 @@ def dump_frames(directory, seed=C.DEFAULT_SEED, ending="victory"):
         if battle is None:
             raise RuntimeError("could not build a battle against a living robber party")
         app.start_battle(battle)
+        # Keep the public battle PNG honest about ranged juice as well as the
+        # melee/wound chrome: this is a short presentation sample, not a rule
+        # action and therefore does not consume AP or RNG.
+        ranged_unit = app.campaign.units[battle.sides["attacker"][0]]
+        ranged_target = app.campaign.units[battle.sides["defender"][0]]
+        app.battle_screen._fx_from_record({
+            "kind": "ranged", "unit": ranged_unit.id,
+            "target": ranged_target.id, "hit": False, "reason": "miss"})
         app._draw()
         capture("battle.png")
 

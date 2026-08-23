@@ -17,7 +17,9 @@ class Generator:
         self.rng = rng; self.world = W.World(C.MAP_WIDTH, C.MAP_HEIGHT)
         self.settlements, self.realms, self.units = {}, {}, {}
         self.parties = []; self.uid = self.sid = self.pid = 0; self.taken = {}
-        self.realm_names, self.settlement_names = set(), set()
+        # One allocator spans all visible geography.  A settlement called
+        # Greywater beside a river called Greywater is needlessly ambiguous.
+        self.name_pool = set()
 
     def _id(self, attr):
         value = getattr(self, attr) + 1; setattr(self, attr, value); return value
@@ -160,7 +162,8 @@ class Generator:
         self.rng.shuffle(region_names)
         bands = max(4, min(len(region_names), self.world.width // 14))
         for index in range(bands):
-            name = region_names[index]
+            name = N._unique(self.rng, lambda _rng, n=region_names[index]: n,
+                             self.name_pool)
             lo = index * self.world.width // bands
             hi = (index + 1) * self.world.width // bands
             cells = {(q, r) for (q, r) in self.world.grid
@@ -170,12 +173,20 @@ class Generator:
                 self.world.region_by_hex[pos] = name
         river_names = list(N.RIVER_NAMES)
         self.rng.shuffle(river_names)
-        river_cells = {}
+        river_labels, river_cells = {}, {}
         for pos, terrain in self.world.grid.items():
             if terrain == C.TERRAIN_RIVER:
                 # The two generated river corridors are separated by q.
                 index = 0 if pos[0] < self.world.width // 2 else 1
-                name = river_names[index]
+                if index >= len(river_names):
+                    index %= len(river_names)
+                # Allocate once per generated river, not once per cell.
+                name = river_labels.get(index)
+                if name is None:
+                    name = N._unique(self.rng,
+                                     lambda _rng, n=river_names[index]: n,
+                                     self.name_pool)
+                    river_labels[index] = name
                 river_cells.setdefault(name, set()).add(pos)
                 self.world.river_by_hex[pos] = name
         self.world.rivers.update(river_cells)
@@ -263,7 +274,7 @@ class Generator:
 
     def _holding(self, realm, pos, size):
         sid = self._id("sid")
-        name = N.unique_settlement_name(self.rng, self.settlement_names)
+        name = N.unique_settlement_name(self.rng, self.name_pool)
         owner = realm.key if realm else None
         h = Holding(sid, name, pos, size, owner)
         if size in (C.SIZE_T, C.SIZE_C):
@@ -301,7 +312,7 @@ class Generator:
     def _party_for_holding(self, sid): return next(p for p in self.parties if p.settlement_id == sid)
 
     def _create_realm(self, key, center):
-        realm = Realm(key, N.unique_realm_name(self.rng, self.realm_names),
+        realm = Realm(key, N.unique_realm_name(self.rng, self.name_pool),
                       key == C.PLAYER_REALM_KEY, COLORS[key])
         self.realms[key] = realm
         archetype = self._archetype()

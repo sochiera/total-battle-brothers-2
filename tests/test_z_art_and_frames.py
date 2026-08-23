@@ -86,6 +86,21 @@ def test_dump_frames_writes_live_screens_including_title_and_epilogue(tmp_path):
     pygame.quit()
 
 
+def test_forced_ending_only_changes_epilogue_frame(tmp_path):
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+    subprocess.run([sys.executable, "-m", "tbb", "--seed", "734102",
+                    "--ending", "defeat", "--dump-frames", str(tmp_path)],
+                   cwd=ROOT, env=env, check=True)
+    import pygame
+    pygame.init()
+    ending = pygame.image.load(str(tmp_path / "epilogue.png"))
+    for name in ("campaign.png", "settlement.png", "court.png", "battle.png"):
+        frame = pygame.image.load(str(tmp_path / name))
+        assert pygame.image.tobytes(frame, "RGBA") != \
+            pygame.image.tobytes(ending, "RGBA")
+    pygame.quit()
+
+
 def test_settlement_equip_reason_matches_gear_dry_run(monkeypatch):
     monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
     monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
@@ -193,6 +208,58 @@ def test_settlement_screen_offers_clickable_market_shipping(monkeypatch):
     pygame.quit()
 
 
+def test_settlement_layout_keeps_shipping_above_training(monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from types import SimpleNamespace
+    from tbb.app.settlement_screen import SettlementScreen
+    from tbb.rules.campaign import Campaign
+    pygame.init()
+    screen = SettlementScreen(SimpleNamespace())
+    screen.load(Campaign(13), 1)
+    layout = screen.layout_contract()
+    assert all(not ship.colliderect(train)
+               for ship in layout["ship"] for train in layout["train"])
+    pygame.quit()
+
+
+def test_court_caption_uses_saved_heir_marker(monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from types import SimpleNamespace
+    from tbb.app.court_screen import CourtScreen
+    from tbb.rules.campaign import Campaign
+    pygame.init()
+    campaign = Campaign(734102)
+    heir = campaign.current_heir()
+    campaign.player.heir = None
+    screen = CourtScreen(SimpleNamespace())
+    screen.load(campaign)
+    assert heir.name in screen.caption()
+    assert "Current heir: none" not in screen.caption()
+    pygame.quit()
+
+
+def test_campaign_hud_caption_contains_month_and_season(monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from types import SimpleNamespace
+    from tbb.app.campaign_screen import CampaignScreen
+    from tbb.rules.campaign import Campaign
+    pygame.init()
+    campaign = Campaign(734102)
+    screen = CampaignScreen(SimpleNamespace(art={"terrain": {}}))
+    # load is intentionally not needed for this text-only contract.
+    screen.campaign = campaign
+    assert "Year %d" % campaign.calendar.year in screen.hud_caption()
+    assert campaign.calendar.month_label in screen.hud_caption()
+    assert campaign.calendar.season_name in screen.hud_caption()
+    pygame.quit()
+
+
 def test_campaign_and_battle_juice_frames_survive_scripted_actions(
         monkeypatch):
     monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
@@ -240,6 +307,10 @@ def test_campaign_and_battle_juice_frames_survive_scripted_actions(
                             "target": defender.id, "hit": True,
                             "reason": "wound"})
         assert any(effect["kind"] == "wound_flash" for effect in bs.fx)
+        bs._fx_from_record({"kind": "ranged", "unit": attacker.id,
+                            "target": defender.id, "hit": False,
+                            "reason": "miss"})
+        assert "projectile" in bs.playback_kinds()
         bs.selected_uid = attacker.id
         for _ in range(4):
             app._draw()

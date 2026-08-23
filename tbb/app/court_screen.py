@@ -37,6 +37,13 @@ class CourtScreen:
         return [u for u in realm.living_units(self.campaign.units)
                 if u.id != realm.hero]
 
+    def current_heir(self):
+        return self.campaign.current_heir()
+
+    def caption(self):
+        heir = self.current_heir()
+        return "Current heir: %s" % (heir.name if heir else "none")
+
     def _buttons(self):
         candidates = self._candidates()
         start = self.page * self.PAGE_SIZE
@@ -76,12 +83,12 @@ class CourtScreen:
         draw_panel(surface, 80, 40, SCREEN_W - 160, SCREEN_H - 80)
         fonts, realm = self.app.fonts, self.campaign.player
         hero = self.campaign.units.get(realm.hero)
-        heir = self.campaign.units.get(realm.heir) if realm.heir else None
+        heir = self.current_heir()
         draw_text(surface, fonts["big"], "THE COURT", 120, 70, (50, 30, 15))
         draw_text(surface, fonts["med"], "Hero: %s" % (hero.name if hero else "none"),
                   120, 108)
-        draw_text(surface, fonts["med"], "Heir: %s    Morale: %d" %
-                  (heir.name if heir else "none", int(realm.morale)), 520, 108)
+        draw_text(surface, fonts["med"], "%s    Morale: %d" %
+                  (self.caption(), int(realm.morale)), 520, 108)
         draw_text(surface, fonts["small"],
                   "Choose a living non-hero soldier. This is the only heir screen.",
                   120, 135, (80, 55, 30))

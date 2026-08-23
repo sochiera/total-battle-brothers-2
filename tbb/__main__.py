@@ -49,6 +49,8 @@ def main(argv=None):
         app.new_game()
         if args.resolve_battle:
             app.campaign.auto_resolve_pending()
+            if app.campaign.ended:
+                app.show_epilogue()
     app.run(frames=args.frames)
 
 

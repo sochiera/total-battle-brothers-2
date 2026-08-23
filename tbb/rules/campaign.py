@@ -10,15 +10,9 @@ from .units import Unit
 from .realm import Realm
 from .parties import Party
 from . import worldgen
-
-class Check:
-    __slots__ = ("ok", "reason")
-    def __init__(self, ok, reason=""):
-        self.ok = bool(ok)
-        self.reason = reason
-
-    def __bool__(self):
-        return self.ok
+from . import economy
+from . import contacts
+from .checks import Check
 
 class Campaign:
     def __init__(self, seed=C.DEFAULT_SEED):
@@ -435,33 +429,8 @@ class Campaign:
         return Check(True)
 
     def transfer_goods(self, source_sid, target_sid, resource, dry_run=False):
-        """Move a fixed convoy between two owned holdings with markets."""
-        source = self.settlements.get(source_sid)
-        target = self.settlements.get(target_sid)
-        if source is None or target is None:
-            return Check(False, "both holdings must exist")
-        if source.owner != self.player.key or target.owner != self.player.key:
-            return Check(False, "both holdings must belong to your realm")
-        if not source.has(C.BUILDING_MARKET):
-            return Check(False, "a staffed market is required at the shipping holding")
-        if GEO.hex_distance(source.hex, target.hex) > C.MARKET_TRANSFER_RANGE:
-            return Check(False, "the market convoy cannot reach that far")
-        if resource == "wheat":
-            amount = C.MARKET_TRANSFER_WHEAT
-            if source.wheat < amount:
-                return Check(False, "the shipping holding lacks wheat")
-        elif resource == "gold":
-            amount = C.MARKET_TRANSFER_GOLD
-            if source.gold < amount:
-                return Check(False, "the shipping holding lacks gold")
-        else:
-            return Check(False, "ship wheat or gold")
-        if not dry_run:
-            if resource == "wheat":
-                source.wheat -= amount; target.wheat += amount
-            else:
-                source.gold -= amount; target.gold += amount
-        return Check(True, f"shipped {amount} {resource} from {source.name} to {target.name}")
+        return economy.transfer_goods(self, source_sid, target_sid, resource,
+                                      dry_run)
 
     def can_transfer_goods(self, source_sid, target_sid, resource):
         return self.transfer_goods(source_sid, target_sid, resource, dry_run=True)
@@ -470,19 +439,7 @@ class Campaign:
         return self.transfer_goods(source_sid, target_sid, resource, dry_run)
 
     def raid_settlement(self, sid, raider_realm=None):
-        holding = self.settlements.get(sid)
-        if holding is None or holding.owner is None:
-            return Check(False, "there is no stocked holding to raid")
-        realm = self.realms.get(holding.owner)
-        stolen_w = min(C.RAID_SACK_WHEAT, int(holding.wheat))
-        stolen_g = min(C.RAID_SACK_GOLD, int(holding.gold))
-        holding.wheat -= stolen_w; holding.gold -= stolen_g
-        holding.population = max(0, holding.population - C.RAID_POP_CUT)
-        if realm:
-            realm.wheat = max(0, realm.wheat - stolen_w)
-            realm.gold = max(0, realm.gold - stolen_g)
-        self.notes.append(f"{holding.name} is raided: -{stolen_w} wheat, -{stolen_g} gold, -{C.RAID_POP_CUT} people")
-        return Check(True, "raid sacks stores without annexing the holding")
+        return economy.raid_settlement(self, sid, raider_realm)
 
     def raid(self, sid, raider_realm=None):
         return self.raid_settlement(sid, raider_realm)
@@ -500,6 +457,21 @@ class Campaign:
         if uid is not None:
             self.units[uid].is_heir = True
         return Check(True)
+
+    def current_heir(self, realm_key=None):
+        """Return the living heir represented by either save marker."""
+        realm = self.realms.get(self.player.key if realm_key is None else realm_key)
+        if realm is None:
+            return None
+        candidate = self.units.get(realm.heir) if realm.heir is not None else None
+        if candidate is not None and candidate.alive and not candidate.is_hero:
+            return candidate
+        return next((unit for unit in realm.living_units(self.units)
+                     if unit.is_heir and not unit.is_hero), None)
+
+    def current_heir_id(self, realm_key=None):
+        heir = self.current_heir(realm_key)
+        return heir.id if heir is not None else None
 
     def end_turn(self):
         if self.ended:
@@ -533,47 +505,7 @@ class Campaign:
         return min(holding.pop_cap(), max(0, share))
 
     def _account(self, realm):
-        holdings = realm.holdings(self.settlements)
-        capacity = realm.holdings_cap(self.settlements)
-        multiplier = C.SEASON_WHEAT_MULTIPLIER[self.calendar.season]
-        produced = sum(holding.food_produced(self._local_population(realm, holding))
-                       for holding in holdings) * multiplier
-        living = len(realm.living_units(self.units))
-        food_need = (realm.population * C.POP_FOOD_PER_MONTH +
-                     living * C.WARRIOR_FOOD_UPKEEP)
-        realm.wheat += produced
-        remainder = realm.wheat - food_need
-        if remainder < 0:
-            realm.wheat = 0
-            realm.morale += C.STARVATION_MORALE
-            realm.population = max(0, realm.population - max(1, int(-remainder)))
-        else:
-            granaries = sum(1 for holding in holdings
-                            if holding.has(C.BUILDING_GRANARY))
-            spoilage = max(0.0, C.SPOILAGE_RATE -
-                           granaries * C.GRANARY_SPOILAGE_REDUCTION)
-            realm.wheat = max(0.0, remainder * (1 - spoilage))
-        due = (living * C.WARRIOR_GOLD_UPKEEP +
-               realm.building_upkeep(self.settlements))
-        realm.gold -= due
-        if realm.gold < 0:
-            realm.gold = 0
-            realm.morale += C.UNPAID_UPKEEP_MORALE
-        if realm.population >= capacity:
-            realm.population_fraction = 0.0
-        elif realm.wheat > 0:
-            growth = ((realm.population * C.BIRTH_RATE +
-                       realm.population * C.IMMIGRATION_RATE) *
-                      (realm.morale / 100.0)) + realm.population_fraction
-            whole = int(growth)
-            realm.population = min(capacity,
-                                   realm.population + whole)
-            if realm.population >= capacity:
-                realm.population_fraction = 0.0
-            else:
-                realm.population_fraction = growth - whole
-        realm.morale = max(0, min(
-            100, realm.morale + realm.morale_from_holdings(self.settlements)))
+        economy.account(self, realm)
 
     def _resolve_realm_month(self, realm):
         if realm.destroyed:
@@ -620,7 +552,9 @@ class Campaign:
                                         (C.SIZE_ORDER[C.SIZE_ORDER.index(order.kind_data)-1],
                                          order.kind_data), holding.population))
         elif order.kind == "found":
-            names = {holding.name for holding in self.settlements.values()}
+            names = ({holding.name for holding in self.settlements.values()} |
+                     {realm.name for realm in self.realms.values()} |
+                     set(self.world.regions) | set(self.world.rivers))
             holding = Holding(self._new_sid(), N.unique_settlement_name(self.rng, names),
                               order.kind_data, C.SIZE_V, realm.key)
             self.settlements[holding.id] = holding
@@ -643,7 +577,7 @@ class Campaign:
         hero = self.units.get(realm.hero) if realm.hero is not None else None
         if hero and hero.alive:
             return
-        heir = self.units.get(realm.heir) if realm.heir is not None else None
+        heir = self.units.get(self.current_heir_id(realm.key))
         if heir and heir.alive:
             new = heir
             if hero:
@@ -700,18 +634,12 @@ class Campaign:
             realm.hero = None
 
     def _parties_hostile(self, a, b):
-        if a.realm is None and b.realm is None:
-            return False
-        if a.realm is None or b.realm is None:
-            return True
-        return a.realm != b.realm
+        return contacts.parties_hostile(a, b)
 
     def _scan_contacts_for(self, party):
         h = self.settlement_at(party.hex)
         if h and party.kind == "hero" and h.owner != party.realm:
-            prepared = h.size in (C.SIZE_T, C.SIZE_C) and (
-                h.size == C.SIZE_C or C.BUILDING_WALLS in h.buildings or
-                C.BUILDING_KEEP in h.buildings)
+            prepared = contacts.is_prepared_assault(h)
             self._start_assault(party, self.garrison_party(h.id), h.id,
                                 prepared)
         elif h and party.kind == "bandit":

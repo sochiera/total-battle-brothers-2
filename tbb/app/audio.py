@@ -1,9 +1,4 @@
-"""Original procedural audio for Total Battle Brothers.
-
-Sounds are synthesised in-memory (no copyrighted files): UI clicks, melee
-thock, bow twang, a pain wail, and a long droning ambient campaign loop.
-If the platform has no audio device the engine silently disables sound.
-"""
+"""CC0 audio facade with a quiet procedural fallback for no-device hosts."""
 import math
 import random
 import struct
@@ -120,7 +115,7 @@ class AudioEngine:
         return self._pcm(out)
 
     def _death(self):
-        """A short descending death cry, intentionally synthetic and quiet."""
+        """A short descending death cry for the no-device fallback."""
         rate = 22050
         n = int(rate * 0.72)
         out = []

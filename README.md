@@ -34,8 +34,9 @@ Enter starts. A seed can also be supplied with `--seed 734102`; `--new-game`
 skips the title screen and `--frames 45` is useful for a dummy-video smoke
 run:
 
-The reproducible test entry point is `make test`; it uses the same fallback
-bootstrap instead of invoking the system Python environment directly.
+The reproducible test entry points are `make test` and `./run.sh --test`; both
+use the same fallback bootstrap instead of invoking the system Python
+environment directly.
 
 ```sh
 make test
@@ -186,14 +187,19 @@ when an audio device exists.
 Seeds, the default 734102 world, generated names, and generated settlement
 contents are demo data. Original pixel-art files live in `assets/tiles/`,
 `assets/settlements/`, `assets/banners/`, `assets/units/`, and `assets/ui/`
-(`tools/render_tiles.py` regenerates the terrain tiles). The shipped sounds
-live in `assets/audio/`; synthesis is only a fallback, and audio stays
+(`tools/render_tiles.py` regenerates the terrain tiles). The shipped CC0 sounds
+live in `assets/audio/`; procedural cues are only a fallback, and audio stays
 silent when the machine has no audio device.
 
 Out of scope by design: story campaign, multiplayer, networking, editor,
 new resources, routs, and magic. Battle auto-resolve is provided as the
 practical fallback for a player who does not want to issue individual unit
 orders.
+
+Known limits: the sandbox has no story content, map editor, multiplayer, or
+network service; generated names, settlements, and the default seed are demo
+data. Old save schema versions are rejected, and presentation tests require a
+pygame-capable display/audio environment (dummy SDL is sufficient).
 
 ## Summary and test evidence
 

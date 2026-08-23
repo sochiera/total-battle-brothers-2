@@ -116,8 +116,10 @@ class Result:
     def __bool__(self): return self.ok
 
 class Battle:
-    def __init__(self, campaign, attacker, defender, assault=False, canvas=None):
+    def __init__(self, campaign, attacker, defender, assault=False, canvas=None,
+                 contact_kind=None):
         self.campaign, self.attacker, self.defender, self.assault = campaign, attacker, defender, assault
+        self._contact_kind = contact_kind
         self.sides = {"attacker": [u.id for u in attacker.alive_units(campaign.units)[:C.COMPANY_CAP]],
                       "defender": [u.id for u in defender.alive_units(campaign.units)[:C.COMPANY_CAP]]}
         self.side_of = {uid: side for side, ids in self.sides.items() for uid in ids}
@@ -142,6 +144,21 @@ class Battle:
     def prepared_assault(self):
         """Whether this contact is a walled-holding assault, not a raid."""
         return self.assault
+
+    @property
+    def contact_kind(self):
+        """Stable rules/UI label for the three hostile contact types."""
+        if self._contact_kind is not None:
+            return self._contact_kind
+        if self.assault:
+            return "prepared_assault"
+        if self.attacker.kind == "bandit" or self.defender.kind == "bandit":
+            return "raid"
+        return "field_fight"
+
+    @property
+    def battle_kind(self):
+        return self.contact_kind
 
     @property
     def center(self):

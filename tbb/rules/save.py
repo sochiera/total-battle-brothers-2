@@ -24,6 +24,7 @@ def _unit(u):
             "shaken":u.shaken}
 def _battle(b):
     return {"attacker":b.attacker.pid,"defender":b.defender.pid,"assault":b.assault,
+            "contact_kind":b.contact_kind,
             "sides":b.sides,"side_of":{str(k):v for k,v in b.side_of.items()},
             "positions":{str(k):v for k,v in b.positions.items()},"canvas":{f"{q},{r}":v for (q,r),v in b.canvas.items()},
             "stun_until":{str(k):v for k,v in b.stun_until.items()},"alive":{str(k):v for k,v in b.alive.items()},"ap":{str(k):v for k,v in b.ap.items()},"round":b.round,"turn_side":b.turn_side,"winner":b.winner,"log":b.log,"contact_terrain":b.contact_terrain}
@@ -95,5 +96,5 @@ def from_state_dict(state):
     parties={p.pid:p for p in c.parties}
     for data in state.get("pending_battles",[]):
         canvas={tuple(int(x) for x in k.split(",")):v for k,v in data["canvas"].items()}
-        b=Battle(c,parties[data["attacker"]],parties[data["defender"]],data.get("assault",False),canvas=canvas); b.sides={k:list(v) for k,v in data["sides"].items()}; b.side_of={int(k):v for k,v in data["side_of"].items()}; b.positions={int(k):tuple(v) for k,v in data["positions"].items()}; b.canvas=canvas; b.field=canvas; b.stun_until={int(k):v for k,v in data.get("stun_until",{}).items()}; b.alive={int(k):bool(v) for k,v in data.get("alive",{}).items()}; b.ap={int(k):v for k,v in data.get("ap",{}).items()}; b.round=data.get("round",1); b.turn_side=data.get("turn_side","attacker"); b.winner=data.get("winner"); b.log=list(data.get("log",[])); b.contact_terrain=data.get("contact_terrain",C.TERRAIN_PLAINS); c.pending_battles.append(b)
+        b=Battle(c,parties[data["attacker"]],parties[data["defender"]],data.get("assault",False),canvas=canvas,contact_kind=data.get("contact_kind",data.get("battle_kind"))); b.sides={k:list(v) for k,v in data["sides"].items()}; b.side_of={int(k):v for k,v in data["side_of"].items()}; b.positions={int(k):tuple(v) for k,v in data["positions"].items()}; b.canvas=canvas; b.field=canvas; b.stun_until={int(k):v for k,v in data.get("stun_until",{}).items()}; b.alive={int(k):bool(v) for k,v in data.get("alive",{}).items()}; b.ap={int(k):v for k,v in data.get("ap",{}).items()}; b.round=data.get("round",1); b.turn_side=data.get("turn_side","attacker"); b.winner=data.get("winner"); b.log=list(data.get("log",[])); b.contact_terrain=data.get("contact_terrain",C.TERRAIN_PLAINS); c.pending_battles.append(b)
     return c

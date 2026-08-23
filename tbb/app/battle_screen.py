@@ -20,7 +20,7 @@ class BattleScreen:
         self.log = []
         self._ox = 0
         self._oy = 0
-        self.fx = []            # strike / bolt / hit / wound / death effects
+        self.fx = []            # strike / projectile / hit / wound / death effects
 
     def load(self, battle):
         self.battle = battle
@@ -107,7 +107,7 @@ class BattleScreen:
             self.fx.append({"kind": "melee_strike", "unit": unit.id,
                             "toward": b.position_of(target), "t": 0})
         elif kind == "ranged":
-            self.fx.append({"kind": "bolt", "from": b.position_of(unit),
+            self.fx.append({"kind": "projectile", "from": b.position_of(unit),
                             "to": b.position_of(target), "t": 0})
         if record.get("hit"):
             effect_kind = "death" if not target.alive else (
@@ -287,10 +287,16 @@ class BattleScreen:
         if self.hint:
             draw_text(surf, f["small"], self.hint, 12, SCREEN_H - 60,
                       (120, 40, 30))
-        battle_kind = "prepared assault" if b.assault else "field fight / raid"
+        battle_kind = b.contact_kind.replace("_", " ")
         draw_text(surf, f["small"], "Round %d - %d vs %d, %s ground — %s" % (
             b.round, len(b.living("attacker")), len(b.living("defender")),
             b.contact_terrain, battle_kind), 12, SCREEN_H - 40, (60, 60, 55))
+        if b.contact_kind == "prepared_assault":
+            draw_text(surf, f["med"], "PREPARED ASSAULT — defender walls",
+                      24, 20, (210, 175, 85))
+        elif b.contact_kind == "raid":
+            draw_text(surf, f["med"], "RAID — sack and withdraw, no annexation",
+                      24, 20, (210, 115, 70))
         for bt in self._buttons():
             bt.draw(surf, f["small"])
         if b.over():
@@ -304,7 +310,7 @@ class BattleScreen:
         b = self.battle
         for effect in self.fx:
             k = effect["t"] / float(FX_FRAMES)
-            if effect["kind"] == "bolt":
+            if effect["kind"] == "projectile":
                 fx_, fy_ = self._hex(effect["from"])
                 tx, ty = self._hex(effect["to"])
                 x = int(fx_ + (tx - fx_) * k)
@@ -331,3 +337,7 @@ class BattleScreen:
 
     def _hex(self, pos):
         return hex_center(*pos, self._ox, self._oy)
+
+    def playback_kinds(self):
+        """Kinds currently queued for the dump/playback contract."""
+        return {effect["kind"] for effect in self.fx}
