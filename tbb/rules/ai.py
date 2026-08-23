@@ -56,11 +56,42 @@ def run_ai_turn(campaign):
         _staff_existing(campaign, realm)
         _market_when_short(campaign, realm)
         _develop(campaign, realm)
+        _found(campaign, realm)
         _raise_army(campaign, realm)
         _train_men(campaign, realm)
         _outfit(campaign, realm)
         _march(campaign, realm)
     _bandits_month(campaign)
+
+
+def _found(campaign, realm):
+    """A rival that can afford it seeds a new village on legal adjacent
+    land, keeping one idle worker at home."""
+    if _has_order(realm, "found"):
+        return
+    if realm.gold < C.FOUND_COST["gold"] or realm.wheat < C.FOUND_COST["wheat"]:
+        return
+    if not campaign._can_spend_population(realm, C.FOUND_COST["settlers"]):
+        return
+    world = campaign.world
+    candidates = []
+    for sid in realm.settlement_ids:
+        for pos in sorted(world.neighbours(campaign.settlements[sid].hex)):
+            if campaign.settlement_at(pos) is not None:
+                continue
+            if not G.can_found(world.terrain(pos)):
+                continue
+            if any(p.hex == pos and p.kind == "bandit" and
+                   p.alive_units(campaign.units) for p in campaign.parties):
+                continue
+            candidates.append(pos)
+    if not candidates:
+        return
+    realm.gold -= C.FOUND_COST["gold"]
+    realm.wheat -= C.FOUND_COST["wheat"]
+    realm.population -= C.FOUND_COST["settlers"]
+    realm.orders.append(Order("found", candidates[0],
+                              C.FOUND_COST["months"]))
 
 
 def _staff_existing(campaign, realm):

@@ -28,11 +28,13 @@ class SettlementScreen:
         self.sid = None
         self.hint = ""
         self.unit_page = 0
+        self.garrison_page = 0
 
     def load(self, campaign, sid):
         self.campaign, self.sid = campaign, sid
         self.hint = ""
         self.unit_page = 0
+        self.garrison_page = 0
 
     def _holding(self):
         return self.campaign.settlements[self.sid]
@@ -181,14 +183,46 @@ class SettlementScreen:
         valid = any(self.campaign.world.in_bounds(pos) and
                     self.campaign.settlement_at(pos) is None and
                     self.campaign.world.terrain(pos) in
-                    (C.TERRAIN_PLAINS, C.TERRAIN_RUINS) and
+                    C.FOUNDABLE_TERRAINS and
                     any(pos in self.campaign.world.neighbours(
                         self.campaign.settlements[s].hex)
                         for s in realm.settlement_ids)
                     for row in range(self.campaign.height)
                     for pos in [(column, row)
                                 for column in range(self.campaign.width)])
-        return None if valid else "no adjacent empty plains or ruins"
+        return None if valid else "no adjacent empty plains, ruins, or farmland"
+
+    def _hero_here(self):
+        realm, holding = self._realm(), self._holding()
+        party = self.campaign.hero_party(realm.key)
+        return party if (party and party.hex == holding.hex) else None
+
+    def _attach_reason(self, uid):
+        """Dry-run of the rules-level attach check, shown on the button."""
+        realm, holding = self._realm(), self._holding()
+        party = self._hero_here()
+        if party is None:
+            return "hero company is not here"
+        garrison = self.campaign.garrison_party(self.sid)
+        if not garrison or uid not in garrison.unit_ids:
+            return "soldier is not in this garrison"
+        if len(party.unit_ids) >= C.COMPANY_CAP:
+            return "company cap is 12 including the hero"
+        return None
+
+    def _detach_reason(self, uid):
+        realm, holding = self._realm(), self._holding()
+        party = self._hero_here()
+        if party is None:
+            return "hero company is not here"
+        if uid == realm.hero:
+            return "the hero never garrisons"
+        if uid not in party.unit_ids:
+            return "soldier is not in the company"
+        garrison = self.campaign.garrison_party(self.sid)
+        if garrison and len(garrison.unit_ids) >= holding.garrison_cap():
+            return "garrison is full (%d)" % holding.garrison_cap()
+        return None
 
     def _market_reason(self, direction):
         realm, holding = self._realm(), self._holding()
@@ -283,7 +317,55 @@ class SettlementScreen:
         if start + 6 < len(ids):
             out.append(Button(210, 650, 180, 28, "More warriors", self.next_page))
         out.append(Button(16, 690, 320, 28, "Back to map", self.do_back))
+
+        # --- garrison transfer (right column) ---------------------------
+        gx = 676
+        garrison = self.campaign.garrison_party(self.sid)
+        garrison_ids = list(garrison.unit_ids) if garrison else []
+        garrison_alive = [uid for uid in garrison_ids
+                          if self.campaign.units.get(uid) and
+                          self.campaign.units[uid].alive]
+        gstart = self.garrison_page * 4
+        for index, uid in enumerate(garrison_alive[gstart:gstart + 4]):
+            unit = self.campaign.units[uid]
+            reason = self._attach_reason(uid)
+            out.append(Button(gx, 286 + index * 34, 288, 28,
+                              self._with_reason("To company: %s" % unit.name[:18],
+                                                reason),
+                              lambda i=uid: self.do_attach(i),
+                              enabled=reason is None))
+        if self.garrison_page > 0:
+            out.append(Button(gx, 286 + 4 * 34, 130, 26, "Previous",
+                              self.previous_garrison_page))
+        if gstart + 4 < len(garrison_alive):
+            out.append(Button(gx + 140, 286 + 4 * 34, 130, 26, "More",
+                              self.next_garrison_page))
+        detach_ids = [uid for uid in ids
+                      if self.campaign.units.get(uid) and
+                      self.campaign.units[uid].alive]
+        for index, uid in enumerate(detach_ids[:11]):
+            unit = self.campaign.units[uid]
+            reason = self._detach_reason(uid)
+            out.append(Button(gx, 476 + index * 26, 588, 24,
+                              self._with_reason(
+                                  "%s (%s) - to garrison" %
+                                  (unit.name[:18], unit.kit[:12]), reason),
+                              lambda i=uid: self.do_detach(i),
+                              enabled=reason is None))
         return out
+
+    # garrison transfer actions
+    def do_attach(self, uid):
+        self._do(self.campaign.attach_to_hero(self.sid, uid))
+
+    def do_detach(self, uid):
+        self._do(self.campaign.detach_to_garrison(self.sid, uid))
+
+    def next_garrison_page(self):
+        self.garrison_page += 1
+
+    def previous_garrison_page(self):
+        self.garrison_page = max(0, self.garrison_page - 1)
 
     def next_page(self):
         self.unit_page += 1
@@ -372,20 +454,26 @@ class SettlementScreen:
             button.draw(surface, fonts["small"])
         draw_text(surface, fonts["small"], self.hint, 16, SCREEN_H - 40,
                   (150, 40, 30))
-        draw_text(surface, fonts["small"], "Realm orders (heir selection: Court)",
-                  700, 140, (40, 30, 20))
-        y = 166
-        for order in realm.orders:
+        # right column: orders, then garrison transfer, then the company
+        draw_text(surface, fonts["small"], "Realm orders (heir: Court)",
+                  676, 120, (40, 30, 20))
+        y = 142
+        for order in realm.orders[:6]:
             draw_text(surface, fonts["small"], "%s - %d months" %
-                      (order.label(), order.months), 700, y, (60, 50, 34))
+                      (order.label(), order.months), 676, y, (60, 50, 34))
             y += 20
-        party = self.campaign.hero_party(realm.key)
-        draw_text(surface, fonts["small"], "Field company", 700, 450, (40, 30, 20))
-        y = 476
-        if party:
-            for uid in list(party.unit_ids)[:12]:
-                unit = self.campaign.units.get(uid)
-                if unit and unit.alive:
-                    draw_text(surface, fonts["small"], "%s  [%s]" %
-                              (unit.name, unit.kit), 700, y, (60, 50, 34))
-                    y += 18
+        if not realm.orders:
+            draw_text(surface, fonts["small"], "none", 676, y, (90, 80, 60))
+        garrison = self.campaign.garrison_party(self.sid)
+        draw_text(surface, fonts["small"],
+                  "Garrison %d/%d - attach to company" %
+                  (len(garrison.unit_ids) if garrison else 0,
+                   holding.garrison_cap()), 676, 262, (40, 30, 20))
+        draw_text(surface, fonts["small"],
+                  "Field company %d/%d - detach to garrison" %
+                  (len(self.campaign.hero_party(realm.key).unit_ids)
+                   if self.campaign.hero_party(realm.key) else 0,
+                   C.COMPANY_CAP), 676, 452, (40, 30, 20))
+        if self._hero_here() is None:
+            draw_text(surface, fonts["small"],
+                      "the hero company is not here", 676, 766, (120, 40, 30))

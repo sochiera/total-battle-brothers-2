@@ -18,10 +18,15 @@ class World:
         self.grid[tuple(pos)] = value
 
     def set_crossing(self, pos, kind="ford"):
-        if self.terrain(pos) != "river":
-            raise ValueError("crossings belong on river hexes")
-        if kind not in ("ford", "bridge"):
-            raise ValueError("crossing must be a ford or bridge")
+        terrain = self.terrain(pos)
+        if terrain == "river":
+            if kind not in ("ford", "bridge"):
+                raise ValueError("crossing must be a ford or bridge")
+        elif terrain == "mountain":
+            if kind != "pass":
+                raise ValueError("only a pass cuts through mountains")
+        else:
+            raise ValueError("crossings belong on river or mountain hexes")
         self.crossings[tuple(pos)] = kind
 
     def crossing(self, pos):

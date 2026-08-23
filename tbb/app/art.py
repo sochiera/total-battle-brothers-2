@@ -71,6 +71,10 @@ def terrain_sprites():
         C.TERRAIN_ROAD: lambda: road_tile(5),
         C.TERRAIN_RUINS: lambda: ruins_tile(6),
         C.TERRAIN_VILLAGE: lambda: village_tile(7),
+        C.TERRAIN_MOUNTAIN: lambda: mountain_tile(10),
+        C.TERRAIN_MARSH: lambda: marsh_tile(11),
+        C.TERRAIN_FARMLAND: lambda: farmland_tile(12),
+        C.TERRAIN_COAST: lambda: coast_tile(13),
     }
     for terrain, fallback in fallbacks.items():
         sp[terrain] = _png("tiles/%s.png" % terrain, fallback)
@@ -78,6 +82,8 @@ def terrain_sprites():
         "tiles/ford.png", lambda: crossing_tile(8, "ford"))
     sp[(C.TERRAIN_RIVER, "bridge")] = _png(
         "tiles/bridge.png", lambda: crossing_tile(9, "bridge"))
+    sp[(C.TERRAIN_MOUNTAIN, C.MOUNTAIN_PASS)] = _png(
+        "tiles/pass.png", lambda: pass_tile(14))
     return sp
 
 
@@ -168,6 +174,98 @@ def ruins_tile(seed):
             _px(s, x, y, c)
     for _ in range(12):
         _px(s, rng.randint(0, 23), rng.randint(0, 23), (168, 140, 96))
+    return s
+
+
+def mountain_tile(seed):
+    rng = random.Random(seed)
+    s = _grass_tile(seed, (84, 80, 70))
+    for tx in (4, 14):
+        hgt = rng.randint(9, 11)
+        base_y = 19 + rng.randint(0, 2)
+        for yy in range(hgt):
+            half = (hgt - yy) // 2 + 1
+            shade = 118 + yy * 4
+            for xx in range(-half, half + 1):
+                _px(s, tx + xx, base_y - yy, (shade, shade - 4, shade - 12))
+        # snow cap
+        for xx in range(-1, 2):
+            _px(s, tx + xx, base_y - hgt, (226, 228, 232))
+            _px(s, tx + xx, base_y - hgt + 1, (208, 210, 216))
+        _px(s, tx, base_y, (52, 48, 42))
+        _px(s, tx + 1, base_y, (52, 48, 42))
+    for _ in range(6):
+        _px(s, rng.randint(0, 23), rng.randint(20, 23), (60, 56, 50))
+    return s
+
+
+def pass_tile(seed):
+    """A mountain hex with a worn dirt track cut through the rock."""
+    s = mountain_tile(seed)
+    for y in range(6, 24):
+        for x in range(9, 14):
+            if (x + y) % 7:
+                _px(s, x, y, (146, 118, 78) if y % 3 else (124, 98, 64))
+    for y in (7, 15, 22):
+        _px(s, 9, y, (98, 76, 50))
+        _px(s, 13, y, (98, 76, 50))
+    return s
+
+
+def marsh_tile(seed):
+    rng = random.Random(seed)
+    s = _grass_tile(seed, (66, 78, 58))
+    for _ in range(4):
+        cx, cy = rng.randint(3, 18), rng.randint(4, 18)
+        rw, rh = rng.randint(2, 4), rng.randint(1, 2)
+        for yy in range(rh):
+            for xx in range(rw):
+                _px(s, cx + xx, cy + yy, (58, 72, 88) if (xx + yy) % 3
+                    else (74, 90, 104))
+        _px(s, cx - 1, cy, (58, 72, 88))
+    for _ in range(7):  # reeds
+        rx, ry = rng.randint(1, 22), rng.randint(2, 20)
+        for yy in range(3):
+            _px(s, rx, ry - yy, (96, 112, 62))
+        _px(s, rx + 1, ry - 2, (110, 124, 70))
+    return s
+
+
+def farmland_tile(seed):
+    rng = random.Random(seed)
+    s = _grass_tile(seed, (104, 112, 62))
+    for y in range(3, 22, 4):
+        for x in range(2, 22):
+            _px(s, x, y, (150, 132, 62) if (x // 2) % 2 else (128, 108, 54))
+    for y in range(4, 22, 4):
+        for x in range(2, 22, 2):
+            _px(s, x, y, (86, 96, 48))
+    for _ in range(3):  # boundary posts
+        px_, py = rng.randint(2, 21), rng.choice((2, 21))
+        _px(s, px_, py, (92, 70, 44))
+        _px(s, px_, py - 1, (110, 84, 52))
+    return s
+
+
+def coast_tile(seed):
+    rng = random.Random(seed)
+    s = _new(24, 24)
+    for y in range(24):
+        for x in range(24):
+            sand = _fuzzy(rng, (196, 178, 132), 8)
+            _px(s, x, y, sand)
+    for y in range(24):  # surf line on the left edge
+        for x in range(0, 5):
+            if x + (y % 3) < 5:
+                _px(s, x, y, (92, 116, 142) if x < 3 else (150, 168, 184))
+    for _ in range(5):  # shells and pebbles
+        sx, sy = rng.randint(7, 22), rng.randint(3, 21)
+        _px(s, sx, sy, (226, 216, 188))
+        _px(s, sx + 1, sy, (210, 198, 168))
+    for _ in range(4):  # tufted dune grass
+        gx, gy = rng.randint(8, 21), rng.randint(2, 20)
+        for yy in range(3):
+            _px(s, gx, gy - yy, (118, 126, 70))
     return s
 
 

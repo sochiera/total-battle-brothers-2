@@ -87,6 +87,12 @@ class CourtScreen:
                   120, 135, (80, 55, 30))
         for button in self._buttons():
             button.draw(surface, fonts["small"])
+        draw_text(surface, fonts["small"], "Realm chronicle:", 660, 200,
+                  (60, 45, 25))
+        y = 222
+        for note in self.campaign.notes[-6:][::-1]:
+            draw_text(surface, fonts["small"], note[:52], 660, y, (90, 70, 45))
+            y += 20
         count = max(1, (len(self._candidates()) + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
         draw_text(surface, fonts["small"], "Page %d/%d" % (self.page + 1, count),
                   760, 730, (80, 60, 40))

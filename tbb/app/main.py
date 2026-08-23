@@ -4,6 +4,8 @@ Screens: title, campaign, settlement, hex battle, save/load. Regulations live
 in tbb.rules and are read-only through the Campaign object; presentation never
 reaches into rules internals.
 """
+import random
+
 import pygame
 from pathlib import Path
 
@@ -16,6 +18,11 @@ from tbb.app.battle_screen import BattleScreen
 from tbb.app.save_screen import SaveScreen
 from tbb.app.court_screen import CourtScreen
 from tbb.app.ui import draw_text, Button, SCREEN_W, SCREEN_H
+
+
+def generated_seed():
+    """A fresh numeric campaign seed for the Generate button."""
+    return random.randint(10000, 999999)
 
 
 def build_art():
@@ -37,7 +44,10 @@ class TitleScreen:
         self.msg = ""
 
     def _seed_rect(self):
-        return pygame.Rect(SCREEN_W // 2 - 80, 330, 160, 30)
+        return pygame.Rect(SCREEN_W // 2 - 110, 330, 170, 30)
+
+    def _generate_rect(self):
+        return pygame.Rect(SCREEN_W // 2 + 70, 330, 120, 30)
 
     def _buttons(self):
         x, y, w, h = SCREEN_W // 2 - 120, 400, 240, 40
@@ -57,11 +67,18 @@ class TitleScreen:
     def _start(self):
         self.app.new_game(self._seed())
 
+    def generate(self):
+        self.seed_text = str(generated_seed())
+        self.app.audio.sfx("click")
+
     def quit(self):
         pygame.event.post(pygame.event.Event(pygame.QUIT))
 
     def handle(self, ev):
         if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            if self._generate_rect().collidepoint(ev.pos):
+                self.generate()
+                return
             if self._seed_rect().collidepoint(ev.pos):
                 self.app.focus_seed = True
                 return
@@ -76,6 +93,8 @@ class TitleScreen:
                 self._start()
             elif ev.key == pygame.K_RETURN:
                 self._start()
+            elif ev.key == pygame.K_g:
+                self.generate()
             elif self.app.focus_seed:
                 if ev.key == pygame.K_BACKSPACE:
                     self.seed_text = self.seed_text[:-1]
@@ -96,7 +115,7 @@ class TitleScreen:
         draw_text(surf, f["small"],
                   "Grim medieval rule - no magic, only iron and wheat",
                   SCREEN_W // 2 - 250, 210, (150, 138, 120))
-        draw_text(surf, f["small"], "Seed:", SCREEN_W // 2 - 130, 342,
+        draw_text(surf, f["small"], "Seed:", SCREEN_W // 2 - 160, 342,
                   (60, 70, 40))
         rect = self._seed_rect()
         pygame.draw.rect(surf, (240, 226, 190), rect)
@@ -104,11 +123,18 @@ class TitleScreen:
         seed = self.seed_text or str(C.DEFAULT_SEED)
         draw_text(surf, f["small"], seed, rect.x + 6, rect.y + 12,
                   (30, 20, 12))
+        gen = self._generate_rect()
+        pygame.draw.rect(surf, (188, 140, 92), gen)
+        pygame.draw.rect(surf, (60, 38, 24), gen, 2)
+        gtext = "Generate (G)"
+        tw = f["small"].size(gtext)[0]
+        surf.blit(f["small"].render(gtext, True, (30, 20, 12)),
+                  (gen.x + gen.w // 2 - tw // 2, gen.y + 12))
         for b in self._buttons():
             b.draw(surf, f["small"])
         draw_text(surf, f["small"],
-                  "Arrows to pan the map - details in README.md",
-                  SCREEN_W // 2 - 250, SCREEN_H - 80, (120, 110, 90))
+                  "Type a seed or Generate - Enter starts. Arrows pan the map.",
+                  SCREEN_W // 2 - 280, SCREEN_H - 80, (120, 110, 90))
 
 
 class App:
@@ -158,22 +184,24 @@ class App:
         self.save_screen.refresh()
         self.save_screen.mode = "save" if is_save else "load"
         self.mode = "savegame"
-        self.audio.sfx("click")
+        self.audio.sfx("open")
 
     def enter_court(self):
         self.court_screen.load(self.campaign)
         self.mode = "court"
-        self.audio.sfx("click")
+        self.audio.sfx("open")
 
     def start_battle(self, battle):
         self.battle_screen.load(battle)
         self.mode = "battle"
+        self.audio.sfx("open")
 
     def finish_battle(self):
         self.battle_screen.battle = None
         if self.campaign is not None:
             self.campaign_screen.load(self.campaign)
         self.mode = "campaign"
+        self.audio.sfx("close")
 
     # --------------------------------------------------------------- loop
     def run(self, frames=None):

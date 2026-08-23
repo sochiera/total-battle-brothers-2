@@ -11,9 +11,19 @@ from .parties import Party
 SCHEMA_VERSION = C.SAVE_VERSION
 
 def _unit(u):
+    wounds = [u.wound_name(wound) for wound in u.wounds]
+    wound_timers = dict(u.wound_timers)
+    # Normalize pre-string saves or callers that still append the old dict
+    # shape directly before writing the new canonical representation.
+    for wound in u.wounds:
+        months = u.wound_months(wound)
+        if months is not None:
+            wound_timers[u.wound_name(wound)] = months
     return {"id":u.id,"name":u.name,"realm":u.realm,"origin":u.origin,"age":u.age,
             "stats":dict(u.stats),"talents":list(u.talents),"kit":u.kit,"xp":u.xp,
-            "seasoning":u.seasoning,"wounds":list(u.wounds),"battle_wounds":list(u.battle_wounds),
+            "seasoning":u.seasoning,"wounds":wounds,
+            "wound_timers":wound_timers,
+            "battle_wounds":[u.wound_name(wound) for wound in u.battle_wounds],
             "stun_until":u.stun_until,"alive":u.alive,"is_hero":u.is_hero,"is_heir":u.is_heir,
             "max_hit_points":u.max_hit_points,"current_hit_points":u.current_hit_points,
             "shaken":u.shaken}
@@ -48,7 +58,22 @@ def from_state_dict(state):
         for kind,meta in item.get("buildings",{}).items(): h.buildings[kind]=Building(kind,meta.get("staffed",False))
     c.units={}
     for item in state["units"]:
-        u=Unit(item["id"],item["name"],stats=item["stats"],talents=item["talents"],origin=item.get("origin","the road"),age=item.get("age",18),kit=item.get("kit","light"),realm=item.get("realm"),is_hero=item.get("is_hero",False)); u.xp=item.get("xp",0); u.seasoning=item.get("seasoning",0); u.wounds=list(item.get("wounds",[])); u.battle_wounds=list(item.get("battle_wounds",[])); u.stun_until=item.get("stun_until"); u.alive=item.get("alive",True); u.is_heir=item.get("is_heir",False); u.shaken=item.get("shaken",False); u.max_hit_points=item.get("max_hit_points",u.max_hit_points); u.current_hit_points=item.get("current_hit_points",u.max_hit_points); c.units[u.id]=u
+        u=Unit(item["id"],item["name"],stats=item["stats"],talents=item["talents"],origin=item.get("origin","the road"),age=item.get("age",18),kit=item.get("kit","light"),realm=item.get("realm"),is_hero=item.get("is_hero",False))
+        u.xp=item.get("xp",0); u.seasoning=item.get("seasoning",0)
+        u.wounds=[u.wound_name(wound) for wound in item.get("wounds",[])]
+        u.wound_timers={str(name):int(months)
+                        for name, months in item.get("wound_timers",{}).items()
+                        if months is not None}
+        for wound in item.get("wounds",[]):
+            if isinstance(wound, dict) and wound.get("months") is not None:
+                u.wound_timers[u.wound_name(wound)] = int(wound["months"])
+        u.battle_wounds=[u.wound_name(wound)
+                         for wound in item.get("battle_wounds",[])]
+        u.stun_until=item.get("stun_until"); u.alive=item.get("alive",True)
+        u.is_heir=item.get("is_heir",False); u.shaken=item.get("shaken",False)
+        u.max_hit_points=item.get("max_hit_points",u.max_hit_points)
+        u.current_hit_points=item.get("current_hit_points",u.max_hit_points)
+        c.units[u.id]=u
     c.realms={}
     for item in state["realms"]:
         r=Realm(item["key"],item["name"],item.get("is_player",False),tuple(item.get("color",(0,0,0)))); r.gold=item["gold"]; r.wheat=item["wheat"]; r.population=item["population"]; r.population_fraction=item.get("population_fraction",0.0); r.hero=item.get("hero"); r.heir=item.get("heir"); r.unit_ids=set(item.get("unit_ids",[])); r.settlement_ids=list(item.get("settlement_ids",[])); r.morale=item.get("morale",C.MORALE_START); r.destroyed=item.get("destroyed",False); r.start_archetype=item.get("start_archetype"); r.orders=[]
@@ -61,5 +86,6 @@ def from_state_dict(state):
     from .battle import Battle
     parties={p.pid:p for p in c.parties}
     for data in state.get("pending_battles",[]):
-        b=Battle(c,parties[data["attacker"]],parties[data["defender"]],data.get("assault",False)); b.sides={k:list(v) for k,v in data["sides"].items()}; b.side_of={int(k):v for k,v in data["side_of"].items()}; b.positions={int(k):tuple(v) for k,v in data["positions"].items()}; b.canvas={tuple(int(x) for x in k.split(",")):v for k,v in data["canvas"].items()}; b.stun_until={int(k):v for k,v in data.get("stun_until",{}).items()}; b.alive={int(k):bool(v) for k,v in data.get("alive",{}).items()}; b.ap={int(k):v for k,v in data.get("ap",{}).items()}; b.round=data.get("round",1); b.turn_side=data.get("turn_side","attacker"); b.winner=data.get("winner"); b.log=list(data.get("log",[])); c.pending_battles.append(b)
+        canvas={tuple(int(x) for x in k.split(",")):v for k,v in data["canvas"].items()}
+        b=Battle(c,parties[data["attacker"]],parties[data["defender"]],data.get("assault",False),canvas=canvas); b.sides={k:list(v) for k,v in data["sides"].items()}; b.side_of={int(k):v for k,v in data["side_of"].items()}; b.positions={int(k):tuple(v) for k,v in data["positions"].items()}; b.canvas=canvas; b.field=canvas; b.stun_until={int(k):v for k,v in data.get("stun_until",{}).items()}; b.alive={int(k):bool(v) for k,v in data.get("alive",{}).items()}; b.ap={int(k):v for k,v in data.get("ap",{}).items()}; b.round=data.get("round",1); b.turn_side=data.get("turn_side","attacker"); b.winner=data.get("winner"); b.log=list(data.get("log",[])); b.contact_terrain=data.get("contact_terrain",C.TERRAIN_PLAINS); c.pending_battles.append(b)
     return c

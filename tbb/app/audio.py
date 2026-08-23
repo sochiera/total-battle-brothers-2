@@ -49,6 +49,7 @@ class AudioEngine:
         self.sounds["ui_close"] = self.sounds.get("close")
         self.sounds["melee_hit"] = self.sounds.get("hit")
         self.sounds["death_cry"] = self.sounds.get("death")
+        self.sounds["open"] = self.sounds.get("click")
         try:
             self.ambient = pygame.mixer.Sound(str(ASSET_ROOT / "ambient_loop.wav"))
         except Exception:

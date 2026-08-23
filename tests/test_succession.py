@@ -16,7 +16,8 @@ def test_heir_succeeds_with_explicit_shaken_resolve_cap():
               if uid != candidate and campaign.units[uid].alive]
     assert shaken and all(u.shaken for u in shaken)
     assert all(u.stat("resolve") <= C.SHAKEN_RESOLVE_CAP for u in shaken)
-    assert not any(u.wounds.count("bruise") for u in shaken)
+    assert not any(any(u.wound_name(wound) == "bruise"
+                       for wound in u.wounds) for u in shaken)
 
 
 def test_total_loss_defeat_and_last_duchy_victory():

@@ -25,6 +25,10 @@ class Unit:
         self.xp = 0
         self.seasoning = 0
         self.wounds = []
+        # Wound names stay strings for old callers and save files.  Temporary
+        # durations live beside them so the UI and succession code can use a
+        # simple list while persistence still keeps the countdown.
+        self.wound_timers = {}
         self.battle_wounds = []
         self.stun_until = None
         self.alive = True
@@ -54,13 +58,58 @@ class Unit:
     def kit_mods(self):
         return dict(C.KITS[self.kit]["mods"])
 
+    def wound_name(self, wound):
+        return wound["wound"] if isinstance(wound, dict) else wound
+
+    def wound_months(self, wound):
+        if isinstance(wound, dict):
+            return wound.get("months")
+        return self.wound_timers.get(wound)
+
+    def apply_wound(self, wound, months=None):
+        """Add a wound while keeping the public wound collection textual.
+
+        The dict form is accepted as a migration path for old saves/tests;
+        newly applied wounds are always stored as names plus a timer map.
+        """
+        name = self.wound_name(wound)
+        if months is None and isinstance(wound, dict):
+            months = wound.get("months")
+        if months is None and C.WOUNDS.get(name) == "temporary":
+            months = C.TEMP_WOUND_MONTHS
+        if name not in self.wounds:
+            self.wounds.append(name)
+        if months is not None:
+            self.wound_timers[name] = int(months)
+        return name
+
     def stat(self, name):
         value = self.stats.get(name, 0) + self.kit_mods().get(name, 0)
         for wound in self.wounds + self.battle_wounds:
-            value += C.WOUND_STAT_EFFECT.get(wound, {}).get(name, 0)
+            value += C.WOUND_STAT_EFFECT.get(self.wound_name(wound), {}).get(name, 0)
         if name == "resolve" and self.shaken:
             value = min(value, C.SHAKEN_RESOLVE_CAP)
         return max(0, value)
+
+    def heal_month(self):
+        """One calendar month passes: temporary wounds mend, permanent ones
+        never do.  Returns the list of healed wound names."""
+        healed = []
+        for wound in list(self.wounds):
+            name = self.wound_name(wound)
+            months = self.wound_months(wound)
+            if months is None:
+                continue
+            months -= 1
+            if isinstance(wound, dict):
+                wound["months"] = months
+            if months <= 0:
+                self.wounds.remove(wound)
+                self.wound_timers.pop(name, None)
+                healed.append(name)
+            else:
+                self.wound_timers[name] = months
+        return healed
 
     def is_dead(self):
         return not self.alive

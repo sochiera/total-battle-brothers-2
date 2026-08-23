@@ -14,13 +14,15 @@ def hex_distance(a, b):
 def move_cost(terrain, crossing=None):
     if terrain == C.TERRAIN_RIVER:
         return 1 if crossing in C.RIVER_CROSSINGS else None
+    if terrain == C.TERRAIN_MOUNTAIN:
+        return C.PASS_MOVE_COST if crossing == C.MOUNTAIN_PASS else None
     return C.MOVE_COST.get(terrain)
 
 def is_passable(terrain, crossing=None):
     return move_cost(terrain, crossing) is not None
 
 def can_found(terrain, occupied=False):
-    return not occupied and terrain in (C.TERRAIN_PLAINS, C.TERRAIN_RUINS)
+    return not occupied and terrain in C.FOUNDABLE_TERRAINS
 
 def battle_terrain_from_campaign(terrain):
     return terrain if terrain in C.CAMPAIGN_TERRAINS else C.TERRAIN_PLAINS

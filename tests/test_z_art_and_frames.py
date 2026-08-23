@@ -95,3 +95,121 @@ def test_settlement_equip_reason_matches_gear_dry_run(monkeypatch):
     uid = campaign.player.hero
     assert screen._equip_reason(uid, "bow") == screen._gear_reason(uid, "bow")
     pygame.quit()
+
+
+def test_title_seed_entry_and_generate(monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from types import SimpleNamespace
+    from tbb.app.main import TitleScreen, generated_seed
+    from tbb.rules import constants as C
+    pygame.init()
+    pygame.display.set_mode((1, 1))
+
+    class Audio:
+        def sfx(self, *_args):
+            pass
+
+    title = TitleScreen(SimpleNamespace(audio=Audio(), focus_seed=False,
+                                        new_game=lambda *a: None))
+    assert title._seed() == C.DEFAULT_SEED  # empty seed falls back
+    title.seed_text = "123"
+    assert title._seed() == 123
+    title.seed_text = "12x3"
+    assert title._seed() == C.DEFAULT_SEED  # junk falls back
+    seeds = {generated_seed() for _ in range(6)}
+    assert len(seeds) > 1  # generate produces fresh integers
+    title.generate()
+    assert title.seed_text.isdigit() and int(title.seed_text) > 0
+    pygame.quit()
+
+
+def test_settlement_screen_offers_garrison_transfer(monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from types import SimpleNamespace
+    from tbb.app.settlement_screen import SettlementScreen
+    from tbb.rules.campaign import Campaign
+    pygame.init()
+    pygame.display.set_mode((1, 1))
+    campaign = Campaign(84)
+    screen = SettlementScreen(SimpleNamespace())
+    sid = campaign.player.settlement_ids[0]
+    screen.load(campaign, sid)
+    hero_party = campaign.hero_party(campaign.player.key)
+    holding = campaign.settlements[sid]
+    garrison = campaign.garrison_party(sid)
+    soldier = next((uid for uid in garrison.unit_ids
+                    if campaign.units[uid].alive), None)
+    if hero_party.hex != holding.hex:
+        assert screen._attach_reason(soldier) == "hero company is not here"
+        assert screen._detach_reason(campaign.player.hero) == \
+            "hero company is not here"
+    hero_party.move_to(holding.hex)
+    assert screen._attach_reason(soldier) is None
+    company_man = next(uid for uid in hero_party.unit_ids
+                       if uid != campaign.player.hero)
+    assert screen._detach_reason(company_man) is None
+    assert "the hero never garrisons" in \
+        screen._detach_reason(campaign.player.hero)
+    labels = [b.label for b in screen._build_buttons()]
+    assert any("To company" in label for label in labels)
+    assert any("to garrison" in label for label in labels)
+    pygame.quit()
+
+
+def test_campaign_and_battle_juice_frames_survive_scripted_actions(
+        monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from tbb.rules import battle as battle_rules
+    from tbb.rules import terrain as G
+    from tbb.app.main import App
+    from tbb.app.ui import hex_center
+    pygame.init()
+    app = App()
+    try:
+        app.new_game(734102)
+        screen = app.campaign_screen
+        party = app.campaign.hero_party(0)
+        target = next((n for n in app.campaign.world.neighbours(party.hex)
+                       if app.campaign.world.is_passable(n) and
+                       not any(o.hex == n for o in app.campaign.parties)),
+                      None)
+        if target is not None:
+            start = party.hex
+            screen.selected_pid = party.pid  # first click selected the band
+            x, y = hex_center(*target, screen.ox, screen.oy)
+            screen._click_hex((x, y))
+            for _ in range(4):  # march tween frames
+                app._draw()
+            assert party.hex in app.campaign.world.neighbours(start)
+            assert screen.anims
+        # battle enter: strike, wound flash frames, then leave
+        bandit = next(p for p in app.campaign.parties
+                      if p.kind == "bandit" and
+                      p.alive_units(app.campaign.units))
+        battle = battle_rules.battle_from_contact(app.campaign, party,
+                                                  bandit)
+        app.start_battle(battle)
+        bs = app.battle_screen
+        attacker = app.campaign.units[battle.sides["attacker"][0]]
+        bs.selected_uid = attacker.id
+        for _ in range(4):
+            app._draw()
+        app.finish_battle()
+        # scripted defeat still renders the banner
+        campaign = app.campaign
+        campaign.player.settlement_ids = []
+        campaign.player.heir = None
+        campaign.units[campaign.player.hero].alive = False
+        campaign.check_end_conditions()
+        assert campaign.ended and campaign.end_reason == "defeat"
+        for _ in range(3):
+            app._draw()
+    finally:
+        app.audio.music_stop()
+        pygame.quit()

@@ -142,7 +142,7 @@ class Campaign:
         terrain = self.world.terrain(target)
         cost = GEO.move_cost(terrain, crossing)
         if cost is None:
-            return Check(False, "the river has no ford or bridge")
+            return Check(False, "no way through: rivers need a ford or bridge, mountains a pass")
         if terrain == C.TERRAIN_ROAD and not party.road_bonus:
             party.mp += C.ROAD_MOVEMENT_BONUS
             party.road_bonus = True
@@ -299,7 +299,10 @@ class Campaign:
         if self.settlement_at(pos):
             return Check(False, "this hex is already occupied")
         if not GEO.can_found(self.world.terrain(pos)):
-            return Check(False, "founding requires empty plains or ruins")
+            return Check(False, "founding requires empty plains, ruins, or farmland")
+        if any(p.kind == "bandit" and p.hex == pos and
+               p.alive_units(self.units) for p in self.parties):
+            return Check(False, "robbers camp on that ground")
         adjacent = any(
             self.settlements[s].owner == realm.key and
             pos in self.world.neighbours(self.settlements[s].hex)
@@ -454,6 +457,8 @@ class Campaign:
         for unit in self.units.values():
             if unit.shaken:
                 unit.shaken = False
+        for unit in self.units.values():
+            unit.heal_month()
         for party in self.parties:
             if party.kind in ("hero", "bandit"):
                 party.mp = self._fresh_mp(party)
@@ -595,6 +600,11 @@ class Campaign:
                 unit = self.units.get(uid)
                 if unit is not None and unit.alive and unit.id != new.id:
                     unit.shaken = True
+            if realm.key == self.player.key:
+                self.notes.append(
+                    "%s falls; %s succeeds as heir (morale %d)"
+                    % (hero.name if hero else "the old hero", new.name,
+                       C.MORALE_HEIR_SUCCESSION))
             return
         if realm.can_raise_hero(self.settlements):
             new = self._make_unit(realm.key, "the council", True)
@@ -616,6 +626,10 @@ class Campaign:
                 unit = self.units.get(uid)
                 if unit is not None and unit.alive and unit.id != new.id:
                     unit.shaken = True
+            if realm.key == self.player.key:
+                self.notes.append(
+                    "no heir lived; the council raises %s (morale %d)"
+                    % (new.name, C.MORALE_NEW_COMMANDER))
         else:
             realm.hero = None
 
@@ -683,6 +697,14 @@ class Campaign:
         if (realm_key is not None and
                 sid not in self.realms[realm_key].settlement_ids):
             self.realms[realm_key].settlement_ids.append(sid)
+        player_key = self.player.key
+        if realm_key == player_key:
+            self.notes.append("%s is taken by your banner" % holding.name)
+        elif old == player_key:
+            self.notes.append("%s is lost to %s"
+                              % (holding.name,
+                                 self.realms[realm_key].name
+                                 if realm_key is not None else "robbers"))
 
     def _make_battle(self, a, d, assault=False):
         from . import battle as B
