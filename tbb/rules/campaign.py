@@ -577,7 +577,7 @@ class Campaign:
         hero = self.units.get(realm.hero) if realm.hero is not None else None
         if hero and hero.alive:
             return
-        heir = self.units.get(self.current_heir_id(realm.key))
+        heir = self.current_heir(realm.key)
         if heir and heir.alive:
             new = heir
             if hero:
@@ -755,7 +755,7 @@ class Campaign:
     def check_end_conditions(self):
         for realm in self.realms.values():
             hero = self.units.get(realm.hero) if realm.hero is not None else None
-            heir = self.units.get(realm.heir) if realm.heir is not None else None
+            heir = self.current_heir(realm.key)
             no_holdings = (not realm.settlement_ids or
                            not realm.can_raise_hero(self.settlements))
             no_line = not (hero and hero.alive) and not (heir and heir.alive)

@@ -8,6 +8,7 @@ import pygame
 
 from tbb.rules import constants as C
 from tbb.rules import terrain as G
+from tbb.app.battle_labels import BATTLE_KIND_LABELS
 from tbb.app.ui import (hex_center, pick_hex, draw_panel, draw_text, Button,
                         PANEL_W, SCREEN_W, SCREEN_H, TS, realm_index)
 
@@ -325,7 +326,7 @@ class CampaignScreen:
         c = self.campaign
         sf = self.app.fonts["small"]
         settle_art = self.app.art["settle"]
-        now = pygame.time.get_ticks()
+        now = getattr(self.app, "render_time", 0)
         # Holdings are painted first so a raider remains visible and
         # clickable; owned ones breathe with a slow idle pulse.
         for h in c.settlements.values():
@@ -389,8 +390,9 @@ class CampaignScreen:
                         surf, (90, 200, 90) if party.mp else (120, 110, 90),
                         [(mx - 9, my), (mx + 9, my), (mx, my - 11)], 2)
         if self.campaign.pending_battles:
-            battle_kind = self.campaign.pending_battles[0].contact_kind.replace(
-                "_", " ")
+            battle_kind = BATTLE_KIND_LABELS.get(
+                self.campaign.pending_battles[0].contact_kind,
+                self.campaign.pending_battles[0].contact_kind.upper())
             draw_text(surf, self.app.fonts["med"],
                       "A BATTLE WAITS - %s - press B" % battle_kind,
                       24, 48, (200, 40, 22))

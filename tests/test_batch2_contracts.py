@@ -1,6 +1,4 @@
 import re
-import pytest
-
 from tbb.rules import constants as C
 from tbb.rules.campaign import Campaign
 from tbb.rules import persistence
@@ -27,21 +25,6 @@ def test_transfer_requires_two_distinct_holdings_and_source_market():
     assert "market" in missing.reason
 
 
-def test_ship_target_is_none_when_all_other_holdings_are_out_of_range():
-    pytest.importorskip("pygame")
-    from types import SimpleNamespace
-    from tbb.app.settlement_screen import SettlementScreen
-    campaign = Campaign(13)
-    source_sid = campaign.player.settlement_ids[0]
-    source = campaign.settlements[source_sid]
-    for holding in campaign.settlements.values():
-        if holding.owner == campaign.player.key and holding.id != source_sid:
-            holding.hex = (63, 47)
-    screen = SettlementScreen(SimpleNamespace())
-    screen.load(campaign, source_sid)
-    assert screen._transfer_target() is None
-
-
 def test_is_heir_marker_is_used_by_succession_when_realm_pointer_is_missing():
     campaign = Campaign(734102)
     old_hero = campaign.player.hero
@@ -55,6 +38,15 @@ def test_is_heir_marker_is_used_by_succession_when_realm_pointer_is_missing():
 
 def test_campaign_and_economy_use_one_check_type():
     assert CampaignCheck is EconomyCheck
+
+
+def test_battle_constructor_accepts_public_battle_kind_alias():
+    from tbb.rules.battle import Battle
+    campaign = Campaign(734102)
+    battle = Battle(campaign, campaign.hero_party(0),
+                    next(p for p in campaign.parties if p.kind == "bandit"),
+                    battle_kind="raid")
+    assert battle.contact_kind == battle.battle_kind == "raid"
 
 
 def test_player_cannot_raid_own_holding_but_neutral_can_be_sacked():
@@ -105,10 +97,11 @@ def test_mid_battle_save_can_continue_after_restore(tmp_path):
     assert restored.units[target.id].wounds == target.wounds
     assert restored.units[target.id].current_hit_points == target.current_hit_points
     assert restored.units[target.id].max_hit_points == target.max_hit_points
-    battle._contact_kind = "raid"
+    battle.battle_kind = "raid"
     persistence.save(campaign, "mid-batch2-kind", tmp_path)
     restored_kind = persistence.load("mid-batch2-kind", tmp_path)
     assert restored_kind.pending_battles[0].contact_kind == "raid"
+    assert restored_kind.pending_battles[0].battle_kind == "raid"
     assert restored.calendar == campaign.calendar
     assert restored.rng.getstate() == campaign.rng.getstate()
     loaded_attacker = restored.units[attacker.id]

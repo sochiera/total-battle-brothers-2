@@ -23,7 +23,7 @@ def test_heir_succeeds_with_explicit_shaken_resolve_cap():
 def test_total_loss_defeat_and_last_duchy_victory():
     defeat = Campaign(32)
     defeat.player.settlement_ids = []
-    defeat.player.heir = None
+    defeat.designate_heir(None)
     defeat.units[defeat.player.hero].alive = False
     defeat.check_end_conditions()
     assert defeat.ended and defeat.end_reason == "defeat"

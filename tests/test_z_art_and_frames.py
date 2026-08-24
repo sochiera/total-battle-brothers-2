@@ -83,22 +83,92 @@ def test_dump_frames_writes_live_screens_including_title_and_epilogue(tmp_path):
                       for x in range(0, image.get_width(), 8)
                       for y in range(0, image.get_height(), 8)}
             assert len(colors) > 20
+    title = pygame.image.load(str(tmp_path / "title.png"))
+    title_pixels = [title.get_at((x, y))[:3]
+                    for x in range(260, 1020, 3)
+                    for y in range(130, 220, 3)]
+    assert sum((r, g, b) == (206, 184, 144)
+               for r, g, b in title_pixels) > 100
+    campaign = pygame.image.load(str(tmp_path / "campaign.png"))
+    assert sum(campaign.get_at((x, y))[:3] == (200, 40, 22)
+               for x in range(0, 700) for y in range(40, 80)) > 500
+    battle = pygame.image.load(str(tmp_path / "battle.png"))
+    # The scripted dump includes a centered wound flash in addition to the
+    # roster and terrain.
+    assert sum(battle.get_at((x, y))[:3] == (250, 170, 45)
+               for x in range(1280) for y in range(800)) > 0
+    epilogue = pygame.image.load(str(tmp_path / "epilogue.png"))
+    # The ending is a full-window screen with a distinctive center title
+    # palette, not a narrow strip left over from the map.
+    assert epilogue.get_at((0, 0))[:3] == (32, 48, 38)
+    center_colours = {tuple(epilogue.get_at((x, y)))[:3]
+                      for x in range(300, 980, 4)
+                      for y in range(180, 380, 4)}
+    assert any(r > 150 and g > 120 and b < 160
+               for r, g, b in center_colours)
+    assert sum(epilogue.get_at((x, y))[:3] == (220, 198, 126)
+               for x in range(300, 980) for y in range(180, 300)) > 100
+    for x in (388, 652):
+        button_ink = sum(
+            (lambda pixel: pixel[0] < 100 and pixel[1] < 80 and pixel[2] < 60)
+            (epilogue.get_at((px, py))[:3])
+            for px in range(x + 20, x + 220)
+            for py in range(508, 536))
+        assert button_ink > 50
     pygame.quit()
 
 
 def test_forced_ending_only_changes_epilogue_frame(tmp_path):
+    victory_dir = tmp_path / "victory"
+    defeat_dir = tmp_path / "defeat"
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
     subprocess.run([sys.executable, "-m", "tbb", "--seed", "734102",
-                    "--ending", "defeat", "--dump-frames", str(tmp_path)],
+                    "--dump-frames", str(victory_dir)],
+                   cwd=ROOT, env=env, check=True)
+    subprocess.run([sys.executable, "-m", "tbb", "--seed", "734102",
+                    "--ending", "defeat", "--dump-frames", str(defeat_dir)],
                    cwd=ROOT, env=env, check=True)
     import pygame
     pygame.init()
-    ending = pygame.image.load(str(tmp_path / "epilogue.png"))
+    ending = pygame.image.load(str(defeat_dir / "epilogue.png"))
     for name in ("campaign.png", "settlement.png", "court.png", "battle.png"):
-        frame = pygame.image.load(str(tmp_path / name))
-        assert pygame.image.tobytes(frame, "RGBA") != \
+        before = pygame.image.load(str(victory_dir / name))
+        after = pygame.image.load(str(defeat_dir / name))
+        assert pygame.image.tobytes(before, "RGBA") == \
+            pygame.image.tobytes(after, "RGBA")
+        assert pygame.image.tobytes(before, "RGBA") != \
             pygame.image.tobytes(ending, "RGBA")
+    victory = pygame.image.load(str(victory_dir / "epilogue.png"))
+    assert pygame.image.tobytes(victory, "RGBA") != \
+        pygame.image.tobytes(ending, "RGBA")
     pygame.quit()
+
+
+def test_epilogue_exposes_readable_continue_and_quit_controls(monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from tbb.app.main import App
+    pygame.init()
+    app = App()
+    try:
+        app.new_game(734102)
+        app.campaign.ended = True
+        app.campaign.end_reason = "victory"
+        app.show_epilogue()
+        labels = [button.label for button in app.epilogue_screen._buttons()]
+        assert any("Continue" in label for label in labels)
+        assert any("Quit" in label for label in labels)
+        app._draw()
+        assert app.display.get_at((0, 0))[:3] == (32, 48, 38)
+    finally:
+        app.audio.music_stop()
+        pygame.quit()
+
+
+def test_battle_banner_palette_keeps_field_fight_distinct():
+    from tbb.app.battle_labels import BATTLE_KIND_COLOURS
+    assert len(set(BATTLE_KIND_COLOURS.values())) == 3
 
 
 def test_settlement_equip_reason_matches_gear_dry_run(monkeypatch):
@@ -181,6 +251,25 @@ def test_settlement_screen_offers_garrison_transfer(monkeypatch):
     pygame.quit()
 
 
+def test_ship_target_is_none_when_all_other_holdings_are_out_of_range(monkeypatch):
+    monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
+    monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
+    import pygame
+    from types import SimpleNamespace
+    from tbb.app.settlement_screen import SettlementScreen
+    from tbb.rules.campaign import Campaign
+    pygame.init()
+    campaign = Campaign(13)
+    source_sid = campaign.player.settlement_ids[0]
+    for holding in campaign.settlements.values():
+        if holding.owner == campaign.player.key and holding.id != source_sid:
+            holding.hex = (63, 47)
+    screen = SettlementScreen(SimpleNamespace())
+    screen.load(campaign, source_sid)
+    assert screen._transfer_target() is None
+    pygame.quit()
+
+
 def test_settlement_screen_offers_clickable_market_shipping(monkeypatch):
     monkeypatch.setenv("SDL_VIDEODRIVER", "dummy")
     monkeypatch.setenv("SDL_AUDIODRIVER", "dummy")
@@ -202,7 +291,10 @@ def test_settlement_screen_offers_clickable_market_shipping(monkeypatch):
     assert any("Ship gold" in label for label in labels)
     assert screen._transfer_reason(target, "wheat") is None
     campaign.settlements[screen.sid].wheat = C.MARKET_TRANSFER_WHEAT + 1
-    screen.do_transfer("wheat", target)
+    shipping_button = next(button for button in screen._build_buttons()
+                           if button.label.startswith("Ship wheat"))
+    assert shipping_button.enabled
+    shipping_button.on_click()
     assert campaign.settlements[screen.sid].wheat == 1
     assert campaign.settlements[target].wheat > 0
     pygame.quit()
@@ -318,7 +410,7 @@ def test_campaign_and_battle_juice_frames_survive_scripted_actions(
         # scripted defeat still renders the banner
         campaign = app.campaign
         campaign.player.settlement_ids = []
-        campaign.player.heir = None
+        campaign.designate_heir(None)
         campaign.units[campaign.player.hero].alive = False
         campaign.check_end_conditions()
         assert campaign.ended and campaign.end_reason == "defeat"

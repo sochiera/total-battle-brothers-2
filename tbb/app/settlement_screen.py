@@ -251,6 +251,8 @@ class SettlementScreen:
         candidates = [self.campaign.settlements[sid]
                       for sid in self.campaign.player.settlement_ids
                       if sid != self.sid and sid in self.campaign.settlements
+                      and self.campaign.settlements[sid].owner ==
+                      self.campaign.player.key
                       and 0 < GEO.hex_distance(holding.hex,
                                                self.campaign.settlements[sid].hex)
                       <= C.MARKET_TRANSFER_RANGE]

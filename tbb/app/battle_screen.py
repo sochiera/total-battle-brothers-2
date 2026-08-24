@@ -5,6 +5,8 @@ feedback with lunge, projectile and flash juice."""
 import pygame
 
 from tbb.rules import constants as C
+from tbb.app.battle_labels import (BATTLE_KIND_COLOURS, BATTLE_KIND_DETAILS,
+                                    BATTLE_KIND_LABELS)
 from tbb.app.ui import hex_center, pick_hex, draw_panel, draw_text, Button, \
     hex_corners, SCREEN_W, SCREEN_H, realm_index
 
@@ -39,7 +41,7 @@ class BattleScreen:
     def _compute_focus(self):
         cq, cr = self.battle.center
         self._ox = int(SCREEN_W / 2 - 1.72 * 22 * (cq + cr * 0.5))
-        self._oy = int(SCREEN_H / 2 - 60 - 1.5 * 22 * cr)
+        self._oy = int(SCREEN_H / 2 - 60 - 1.5 * 22 * cr + 60)
 
     # ------------------------------------------------------------ actions
     def _do(self, res, kind=None):
@@ -105,15 +107,20 @@ class BattleScreen:
         kind = record["kind"]
         if kind == "melee":
             self.fx.append({"kind": "melee_strike", "unit": unit.id,
-                            "toward": b.position_of(target), "t": 0})
+                            "toward": record.get("toward",
+                                                   b.position_of(target)),
+                            "t": 0})
         elif kind == "ranged":
-            self.fx.append({"kind": "projectile", "from": b.position_of(unit),
-                            "to": b.position_of(target), "t": 0})
+            self.fx.append({"kind": "projectile",
+                            "from": record.get("from", b.position_of(unit)),
+                            "to": record.get("to", b.position_of(target)),
+                            "t": 0})
         if record.get("hit"):
             effect_kind = "death" if not target.alive else (
                 "wound_flash" if record.get("reason") == "wound" else "hit_flash")
             self.fx.append({"kind": effect_kind,
-                            "pos": b.position_of(target), "t": 0,
+                            "pos": record.get("pos", b.position_of(target)),
+                            "t": 0,
                             "dead": not target.alive})
             if not target.alive:
                 self.app.audio.sfx("death")
@@ -276,6 +283,8 @@ class BattleScreen:
             draw_text(surf, f["small"], "%s  AP%d HP%d/%d" % (unit.name[:12], b.ap.get(uid, 0), unit.current_hit_points, unit.max_hit_points), cx + 8, cy - 4,
                       (30, 20, 12))
         self._draw_fx(surf)
+        pygame.draw.rect(surf, (218, 200, 158), (0, 0, SCREEN_W, 60))
+        pygame.draw.line(surf, (92, 60, 34), (0, 59), (SCREEN_W, 59), 3)
         draw_panel(surf, 0, SCREEN_H - 90, SCREEN_W, 90)
         your_side = b.human_side()
         acting = ("Yours" if b.turn_side == your_side else "The foe's")
@@ -287,16 +296,15 @@ class BattleScreen:
         if self.hint:
             draw_text(surf, f["small"], self.hint, 12, SCREEN_H - 60,
                       (120, 40, 30))
-        battle_kind = b.contact_kind.replace("_", " ")
+        battle_kind = BATTLE_KIND_LABELS.get(b.contact_kind,
+                                             b.contact_kind.upper())
         draw_text(surf, f["small"], "Round %d - %d vs %d, %s ground — %s" % (
             b.round, len(b.living("attacker")), len(b.living("defender")),
             b.contact_terrain, battle_kind), 12, SCREEN_H - 40, (60, 60, 55))
-        if b.contact_kind == "prepared_assault":
-            draw_text(surf, f["med"], "PREPARED ASSAULT — defender walls",
-                      24, 20, (210, 175, 85))
-        elif b.contact_kind == "raid":
-            draw_text(surf, f["med"], "RAID — sack and withdraw, no annexation",
-                      24, 20, (210, 115, 70))
+        kind_detail = BATTLE_KIND_DETAILS.get(b.contact_kind, "contact")
+        draw_text(surf, f["med"], "%s — %s" % (battle_kind, kind_detail),
+                  24, 20, BATTLE_KIND_COLOURS.get(
+                      b.contact_kind, (210, 115, 70)))
         for bt in self._buttons():
             bt.draw(surf, f["small"])
         if b.over():

@@ -142,24 +142,56 @@ class EpilogueScreen:
     def __init__(self, app):
         self.app = app
 
+    def _continue(self):
+        self.app.mode = "title"
+
+    def _quit(self):
+        pygame.event.post(pygame.event.Event(pygame.QUIT))
+
+    def _buttons(self):
+        width, height = 240, 44
+        x = SCREEN_W // 2 - width - 12
+        y = 500
+        return [
+            Button(x, y, width, height, "Continue to title", self._continue),
+            Button(SCREEN_W // 2 + 12, y, width, height, "Quit", self._quit),
+        ]
+
     def handle(self, ev):
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            for button in self._buttons():
+                if button.hit(*ev.pos):
+                    button.on_click()
+                    return
         if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_RETURN, pygame.K_ESCAPE):
-            self.app.mode = "title"
+            self._continue()
 
     def draw(self, surf):
         victory = self.app.campaign.end_reason == "victory"
-        surf.fill((32, 48, 38) if victory else (55, 32, 30))
+        background = (32, 48, 38) if victory else (55, 32, 30)
+        surf.fill(background)
         colour = (220, 198, 126) if victory else (220, 116, 92)
-        draw_text(surf, self.app.fonts["big"],
-                  "VICTORY" if victory else "DEFEAT",
-                  SCREEN_W // 2 - 120, 250, colour)
-        draw_text(surf, self.app.fonts["med"],
-                  ("The last ruling duchy endures." if victory else
-                   "The ducal line is extinguished."),
-                  SCREEN_W // 2 - 220, 315, (230, 220, 190))
+        pygame.draw.rect(surf, colour, (54, 54, SCREEN_W - 108, SCREEN_H - 108), 3)
+        title = "VICTORY" if victory else "DEFEAT"
+        title_font = self.app.fonts.get("hero", self.app.fonts["big"])
+        title_width = title_font.size(title)[0]
+        draw_text(surf, title_font, title, SCREEN_W // 2 - title_width // 2,
+                  190, colour)
+        cause = ("The last ruling duchy endures." if victory else
+                 "The ducal line is extinguished.")
+        cause_width = self.app.fonts["med"].size(cause)[0]
+        draw_text(surf, self.app.fonts["med"], cause,
+                  SCREEN_W // 2 - cause_width // 2, 330, (230, 220, 190))
+        cause_label = "Cause: victory secured." if victory else "Cause: the ducal line is lost."
+        cause_label_width = self.app.fonts["small"].size(cause_label)[0]
+        draw_text(surf, self.app.fonts["small"], cause_label,
+                  SCREEN_W // 2 - cause_label_width // 2, 375,
+                  (190, 180, 160))
         draw_text(surf, self.app.fonts["small"],
-                  "Press Enter or Escape to return to the title screen.",
-                  SCREEN_W // 2 - 220, 400, (190, 180, 160))
+                  "The campaign is over. Choose what to do next.",
+                  SCREEN_W // 2 - 170, 410, (190, 180, 160))
+        for button in self._buttons():
+            button.draw(surf, self.app.fonts["small"])
 
 
 class App:
@@ -168,6 +200,7 @@ class App:
         pygame.display.set_caption("Total Battle Brothers")
         self.fonts = {
             "big": pygame.font.SysFont("dejavusans", 34),
+            "hero": pygame.font.SysFont("dejavusans", 72),
             "med": pygame.font.SysFont("dejavusans", 24),
             "small": pygame.font.SysFont("dejavusans", 17),
         }
@@ -176,6 +209,7 @@ class App:
         self.display = pygame.display.set_mode((SCREEN_W, SCREEN_H),
                                                pygame.DOUBLEBUF)
         self.clock = pygame.time.Clock()
+        self.render_time = 0
         self.mode = "title"
         self.focus_seed = False
         self.found_mode = False
@@ -250,6 +284,7 @@ class App:
             self._draw()
             pygame.display.flip()
             self.clock.tick(60)
+            self.render_time += 1
             drawn += 1
             if frames is not None and drawn >= frames:
                 running = False
@@ -308,6 +343,19 @@ def dump_frames(directory, seed=C.DEFAULT_SEED, ending="victory"):
         capture("title.png")
         app.new_game(seed)
 
+        # Keep the campaign frame live: the pending contact is visible in the
+        # map banner, and the same battle is opened after Court below.
+        hero_party = app.campaign.hero_party(C.PLAYER_REALM_KEY)
+        bandit_party = next(
+            (party for party in app.campaign.parties
+             if party.kind == "bandit" and
+             party.alive_units(app.campaign.units)), None)
+        battle = battle_rules.battle_from_contact(
+            app.campaign, hero_party, bandit_party) if bandit_party else None
+        if battle is None:
+            raise RuntimeError("could not build a battle against a living robber party")
+        app.campaign.pending_battles.append(battle)
+
         app._draw()
         capture("campaign.png")
 
@@ -321,30 +369,28 @@ def dump_frames(directory, seed=C.DEFAULT_SEED, ending="victory"):
         app._draw()
         capture("court.png")
 
-        hero_party = app.campaign.hero_party(C.PLAYER_REALM_KEY)
-        bandit_party = next(
-            (party for party in app.campaign.parties
-             if party.kind == "bandit" and
-             party.alive_units(app.campaign.units)), None)
-        battle = battle_rules.battle_from_contact(
-            app.campaign, hero_party, bandit_party) if bandit_party else None
-        if battle is None:
-            raise RuntimeError("could not build a battle against a living robber party")
         app.start_battle(battle)
         # Keep the public battle PNG honest about ranged juice as well as the
         # melee/wound chrome: this is a short presentation sample, not a rule
         # action and therefore does not consume AP or RNG.
         ranged_unit = app.campaign.units[battle.sides["attacker"][0]]
         ranged_target = app.campaign.units[battle.sides["defender"][0]]
+        mid = (C.BATTLE_WIDTH // 2, C.BATTLE_HEIGHT // 2)
         app.battle_screen._fx_from_record({
             "kind": "ranged", "unit": ranged_unit.id,
-            "target": ranged_target.id, "hit": False, "reason": "miss"})
+            "target": ranged_target.id, "hit": False, "reason": "wound",
+            "from": (mid[0] - 4, mid[1]),
+            "to": (mid[0] + 4, mid[1])})
+        app.battle_screen._fx_from_record({
+            "kind": "melee", "unit": ranged_unit.id,
+            "target": ranged_target.id, "hit": True, "reason": "wound",
+            "toward": mid, "pos": mid})
         app._draw()
         capture("battle.png")
 
         app.campaign.ended = True
         app.campaign.end_reason = ending
-        app.mode = "epilogue"
+        app.show_epilogue()
         app._draw()
         capture("epilogue.png")
     finally:

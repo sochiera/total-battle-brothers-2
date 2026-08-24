@@ -117,9 +117,10 @@ class Result:
 
 class Battle:
     def __init__(self, campaign, attacker, defender, assault=False, canvas=None,
-                 contact_kind=None):
+                 contact_kind=None, battle_kind=None):
         self.campaign, self.attacker, self.defender, self.assault = campaign, attacker, defender, assault
-        self._contact_kind = contact_kind
+        self._contact_kind = (contact_kind if contact_kind is not None
+                              else battle_kind)
         self.sides = {"attacker": [u.id for u in attacker.alive_units(campaign.units)[:C.COMPANY_CAP]],
                       "defender": [u.id for u in defender.alive_units(campaign.units)[:C.COMPANY_CAP]]}
         self.side_of = {uid: side for side, ids in self.sides.items() for uid in ids}
@@ -156,9 +157,17 @@ class Battle:
             return "raid"
         return "field_fight"
 
+    @contact_kind.setter
+    def contact_kind(self, value):
+        self._contact_kind = value
+
     @property
     def battle_kind(self):
         return self.contact_kind
+
+    @battle_kind.setter
+    def battle_kind(self, value):
+        self._contact_kind = value
 
     @property
     def center(self):

@@ -125,7 +125,7 @@ def test_endings_and_succession_are_reachable_without_ui():
     assert c.player.hero != old and c.units[c.player.hero].is_hero
     defeat = Campaign(78)
     defeat.player.settlement_ids = []
-    defeat.player.heir = None
+    defeat.designate_heir(None)
     defeat.units[defeat.player.hero].alive = False
     defeat.check_end_conditions()
     assert defeat.ended and defeat.end_reason == "defeat"

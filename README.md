@@ -34,6 +34,14 @@ Enter starts. A seed can also be supplied with `--seed 734102`; `--new-game`
 skips the title screen and `--frames 45` is useful for a dummy-video smoke
 run:
 
+The visible happy path is title → campaign map (Year, Roman Month, Season, and
+seasonal tint) → an owned settlement (click **Ship wheat** or **Ship gold** when
+an in-range holding is available) → Court (the living current heir) → a battle
+banner naming **PREPARED ASSAULT**, **RAID**, or **FIELD FIGHT**, with projectile
+and strike feedback → a full-window Victory or Defeat screen with its cause and
+Continue / Quit controls. The PNG dump uses that same screen path; it is demo
+data for inspection, not a saved campaign or a replay.
+
 The reproducible test entry points are `make test` and `./run.sh --test`; both
 use the same fallback bootstrap instead of invoking the system Python
 environment directly.
@@ -64,7 +72,9 @@ test -s /tmp/tbb-frames/epilogue.png
 ```
 
 Use `--ending defeat` (or `--force-ending defeat`) to capture the defeat
-epilogue instead of the default victory example.
+epilogue instead of the default victory example. For the same seed, changing
+`--ending` leaves the first five frames byte-identical; only `epilogue.png`
+changes.
 
 For a display-free save check, use the rules-only CLI path:
 
@@ -203,13 +213,21 @@ pygame-capable display/audio environment (dummy SDL is sufficient).
 
 ## Summary and test evidence
 
-Rules are in `tbb/rules` and import no pygame (a source-scan test locks
-this); presentation is in `tbb/app`; original art/audio live in `assets/`.
-Run `make test` for the checked-in suite (pytest reports the exact count), the
-`--save-smoke` command above for a real JSON slot, the dummy `--frames`
-command above for a launch smoke check, and dummy `--dump-frames` to inspect
-the title, campaign, settlement, court, battle, and epilogue screens. The
-suite covers multi-seed worldgen, seasons, development, trade, raids,
+Rules are in `tbb/rules` and import no pygame; presentation is in `tbb/app`;
+original art/audio live in `assets/`. The checked-in validation is:
+
+```sh
+python3 -m compileall -q tbb tests
+./run.sh --save-smoke plan-smoke
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run.sh \
+  --seed 734102 --dump-frames /tmp/tbb-frames
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy ./run.sh \
+  --seed 734102 --ending defeat --dump-frames /tmp/tbb-frames-defeat
+make test
+```
+
+These checks cover multi-seed worldgen, seasons, development, trade, raids,
 individual-unit 30×20 battles, wounds, succession, endings, save/load,
-presentation assets, frame dumping, and pygame isolation. Validation output
-is the test evidence; the documentation does not assume a fixed test count.
+presentation assets, frame contents, and pygame isolation. A display or audio
+device is not required for the dummy SDL dump; old save schema versions,
+story content, multiplayer, networking, and an editor remain out of scope.
